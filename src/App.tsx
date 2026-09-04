@@ -20,7 +20,25 @@ const initialFs:Node={name:"C:\\",type:"folder",children:[
 ]};
 
 function Btn(p:{children:ReactNode;onClick?:()=>void;className?:string}){return <button className={"win-btn "+(p.className||"")} onClick={p.onClick}>{p.children}</button>}
-function Menu({items}:{items:string[]}){return <div className="menu">{items.map(x=><span key={x}>{x}</span>)}</div>}
+type MenuItem=string|{label:string;shortcut?:string;disabled?:boolean;action?:()=>void;children?:MenuItem[]};
+function Menu({items}:{items:MenuItem[]}){
+ const [open,setOpen]=useState<number|null>(null);
+ const [focus,setFocus]=useState(0);
+ const ref=useRef<HTMLDivElement>(null);
+ const entries=items.map(x=>typeof x==="string"?{label:x}:x);
+ useEffect(()=>{const close=(e:MouseEvent)=>{if(ref.current&&!ref.current.contains(e.target as Node))setOpen(null)};window.addEventListener("mousedown",close);return()=>window.removeEventListener("mousedown",close)},[]);
+ return <div className="menu" ref={ref} role="menubar" tabIndex={0} onKeyDown={e=>{
+  if(e.key==="Escape"){setOpen(null);return}
+  if(e.key==="ArrowRight"){e.preventDefault();setFocus(i=>(i+1)%entries.length);setOpen(null);return}
+  if(e.key==="ArrowLeft"){e.preventDefault();setFocus(i=>(i-1+entries.length)%entries.length);setOpen(null);return}
+  if(e.key==="Enter"||e.key==="ArrowDown"){e.preventDefault();setOpen(focus);return}
+ }}>
+  {entries.map((item,i)=><div className="menu-root" key={item.label}>
+   <button className={"menu-trigger "+(open===i?"menu-open":"")} onFocus={()=>setFocus(i)} onClick={()=>setOpen(open===i?null:i)}>{item.label}</button>
+   {open===i&&<div className="dropdown-menu" role="menu">{(item.children?.length?item.children:[{label:item.label,disabled:true}]).map((raw,j)=>{const x=typeof raw==="string"?{label:raw}:raw;return <button key={j} className="menu-entry" disabled={x.disabled} onClick={()=>{x.action?.();setOpen(null)}}>{x.label}<span>{x.shortcut||""}</span>{x.children?.length?<b>▶</b>:null}</button>})}</div>}
+  </div>)}
+ </div>
+}
 
 function WindowFrame({w,active,onFocus,onMove,onMin,onMax,onClose,children,z}:{w:Win;active:boolean;onFocus:()=>void;onMove:(x:number,y:number)=>void;onMin:()=>void;onMax:()=>void;onClose:()=>void;children:ReactNode;z:number}){
  const drag=useRef<{dx:number;dy:number}|null>(null);
@@ -62,7 +80,7 @@ function Explorer(){
   <div className="status">Počet položek: {items.length}<span/> <Btn onClick={()=>setDetails(!details)}>{details?"Ikony":"Podrobnosti"}</Btn></div></div>
 }
 
-function Notepad(){const [text,setText]=useState("Vítejte v LUXFERY 26.\\n\\nWindows 98, ale běží v roce 2026.");const [wrap,setWrap]=useState(true);return <div className="app-fill"><Menu items={["Soubor","Úpravy","Hledat","Formát","Nápověda"]}/><div className="toolbar"><Btn onClick={()=>setText("")}>Nový</Btn><Btn onClick={()=>navigator.clipboard?.writeText(text)}>Kopírovat</Btn><Btn onClick={()=>setWrap(!wrap)}>Zalamování: {wrap?"Ano":"Ne"}</Btn></div><textarea className="editor sunken" value={text} onChange={e=>setText(e.target.value)} style={{whiteSpace:wrap?"pre-wrap":"pre"}}/><div className="status">Řádky: {text.split("\\n").length}<span/>Znaky: {text.length}<span/>UTF-8</div></div>}
+function Notepad(){const [text,setText]=useState("Vítejte v LUXFERY 26.\\n\\nWindows 98, ale běží v roce 2026.");const [wrap,setWrap]=useState(true);return <div className="app-fill"><Menu items={[{label:"Soubor",children:["Nový","Otevřít…","Uložit","Uložit jako…","Tisk…","Konec"]},{label:"Úpravy",children:["Zpět","Vyjmout","Kopírovat","Vložit","Smazat","Vybrat vše"]},{label:"Hledat",children:["Najít…","Najít další","Nahradit…","Přejít na…"]},{label:"Formát",children:["Zalamování řádků","Písmo…"]},{label:"Nápověda",children:["Témata nápovědy","O aplikaci"]}]}/><div className="toolbar"><Btn onClick={()=>setText("")}>Nový</Btn><Btn onClick={()=>navigator.clipboard?.writeText(text)}>Kopírovat</Btn><Btn onClick={()=>setWrap(!wrap)}>Zalamování: {wrap?"Ano":"Ne"}</Btn></div><textarea className="editor sunken" value={text} onChange={e=>setText(e.target.value)} style={{whiteSpace:wrap?"pre-wrap":"pre"}}/><div className="status">Řádky: {text.split("\\n").length}<span/>Znaky: {text.length}<span/>UTF-8</div></div>}
 
 function Calculator(){
  const [v,setV]=useState("0"),[a,setA]=useState<number|null>(null),[op,setOp]=useState<string|null>(null),[sci,setSci]=useState(false);
@@ -94,5 +112,5 @@ export function App(){
   <div className={"desktop-icons "+(settings.showSmallIcons?"small-icons":"")} style={{display:settings.showDesktopIcons?"grid":"none",transform:`translate(-50%,-50%) scale(${scale})`}}>{apps.map(a=><button className="desktop-icon" key={a.app} onDoubleClick={()=>open(a.app)}><span>{a.icon}</span><b>{a.title}</b></button>)}</div>
   {wins.filter(w=>!w.minimized).map(w=><WindowFrame key={w.id} w={w} active={w.id===active} z={100+w.id} onFocus={()=>setActive(w.id)} onMove={(x,y)=>update(w.id,{x,y})} onMin={()=>update(w.id,{minimized:true})} onMax={()=>update(w.id,{maximized:!w.maximized})} onClose={()=>close(w.id)}>{w.app==="explorer"&&<Explorer/>}{w.app==="notepad"&&<Notepad/>}{w.app==="calculator"&&<Calculator/>}{w.app==="paint"&&<Paint/>}{w.app==="minesweeper"&&<Minesweeper/>}{w.app==="system"&&<System open={open} settings={settings} onChange={updateSettings}/>}</WindowFrame>)}
   {start&&<div className="start" onMouseDown={e=>e.stopPropagation()}><div className="start-head"><b>Windows 98</b><span>LUXFERY 26</span></div><div className="start-tree"><div className="tree-root">Plocha</div>{apps.map(a=><button key={a.app} className="tree-app" onClick={()=>open(a.app)}><span>{a.icon}</span><span>{a.title}</span></button>)}</div><div className="start-footer"><button onClick={()=>open("system")}>⚙ Nastavení</button><button onClick={()=>setStart(false)}>⏻ Vypnout…</button></div></div>}
- </div><div className="taskbar" onContextMenu={e=>{e.preventDefault();setStart(false)}}><button className="start-button" onClick={e=>{e.stopPropagation();setStart(!start)}}>▰ <b>Start</b></button><div className="tasks">{wins.map(w=><button key={w.id} className={active===w.id&&!w.minimized?"task-active":""} onClick={()=>{update(w.id,{minimized:!w.minimized});setActive(w.id)}}>{apps.find(a=>a.app===w.app)?.icon} {w.title}</button>)}</div><div className="tray"><span title="Hlasitost">🔊</span><span title="Síť">▧</span><div className="scale-controls" title="Měřítko plochy"><button onClick={e=>{e.stopPropagation();setScale(s=>Math.max(.7,+(s-.1).toFixed(1)))}}>−</button><button onClick={e=>{e.stopPropagation();setScale(s=>Math.min(1.6,+(s+.1).toFixed(1)))}}>+</button></div><span title={clock.toLocaleDateString("cs-CZ",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}>{clock.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}</span></div></div></main>
+ </div><div className="taskbar" onContextMenu={e=>{e.preventDefault();setStart(false)}}><button className="start-button" onClick={e=>{e.stopPropagation();setStart(!start)}}>▰ <b>Start</b></button><div className="tasks">{wins.map(w=><button key={w.id} className={active===w.id&&!w.minimized?"task-active":""} onClick={()=>{update(w.id,{minimized:!w.minimized});setActive(w.id)}}>{apps.find(a=>a.app===w.app)?.icon} {w.title}</button>)}</div><div className="tray"><span title="Hlasitost">🔊</span><span title="Síť">▧</span><div className="tray-scale"><button className="scale-button" onClick={e=>{e.stopPropagation();setScale(s=>Math.max(.7,+(s-.1).toFixed(1)))}}>−</button><button className="scale-button" onClick={e=>{e.stopPropagation();setScale(s=>Math.min(1.6,+(s+.1).toFixed(1)))}}>+</button></div><span className="clock" title={clock.toLocaleDateString("cs-CZ",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}>{clock.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}</span></div></div></main>
 }
