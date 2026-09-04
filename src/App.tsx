@@ -26,7 +26,7 @@ function Menu({items}:{items:MenuItem[]}){
  const [focus,setFocus]=useState(0);
  const ref=useRef<HTMLDivElement>(null);
  const entries=items.map(x=>typeof x==="string"?{label:x}:x);
- useEffect(()=>{const close=(e:MouseEvent)=>{if(ref.current&&!ref.current.contains(e.target as Node))setOpen(null)};window.addEventListener("mousedown",close);return()=>window.removeEventListener("mousedown",close)},[]);
+ useEffect(()=>{const close=(e:MouseEvent)=>{if(ref.current&&!ref.current.contains(e.target as globalThis.Node))setOpen(null)};window.addEventListener("mousedown",close);return()=>window.removeEventListener("mousedown",close)},[]);
  return <div className="menu" ref={ref} role="menubar" tabIndex={0} onKeyDown={e=>{
   if(e.key==="Escape"){setOpen(null);return}
   if(e.key==="ArrowRight"){e.preventDefault();setFocus(i=>(i+1)%entries.length);setOpen(null);return}
