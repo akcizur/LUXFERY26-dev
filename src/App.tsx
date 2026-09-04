@@ -86,8 +86,6 @@ export function App(){
  const [wins,setWins]=useState<Win[]>(restored||[]),[active,setActive]=useState<number|null>(()=>restored?.find(w=>!w.minimized)?.id??null),[start,setStart]=useState(false),[id,setId]=useState(()=>Math.max(0,...(restored||[]).map(w=>w.id))+1),[fs]=useState(initialFs);
  useEffect(()=>saveSession(wins),[wins]);
  const updateSettings=(patch:Partial<DesktopSettings>)=>{const next={...registry,HKCU:{...registry.HKCU,Desktop:{...registry.HKCU.Desktop,settings:{...settings,...patch}}}};setRegistry(next);saveRegistry(next)};
- useEffect(()=>{saveSession(wins)},[wins]);
- const updateSettings=(patch:Partial<DesktopSettings>)=>{const next={...registry,HKCU:{...registry.HKCU,Desktop:{...registry.HKCU.Desktop,settings:{...settings,...patch}}}};setRegistry(next);saveRegistry(next)};
  const clock=new Date(); const open=(app:AppId)=>{const found=wins.find(x=>x.app===app);if(found){setActive(found.id);setWins(wins.map(x=>x.id===found.id?{...x,minimized:false}:x));setStart(false);return}const meta=apps.find(x=>x.app===app)!;const w:Win={id,app,title:meta.title,x:80+wins.length*24,y:60+wins.length*24,w:app==="calculator"?300:650,h:app==="minesweeper"?430:430,minimized:false,maximized:false,top:false};setWins([...wins,w]);setId(id+1);setActive(id);setStart(false)};
  const update=(i:number,p:Partial<Win>)=>setWins(wins.map(w=>w.id===i?{...w,...p}:w));const close=(i:number)=>{setWins(wins.filter(w=>w.id!==i));if(active===i)setActive(null)};
  useEffect(()=>{const k=(e:KeyboardEvent)=>{if(e.altKey&&e.key==="F4"&&active)close(active);if(e.ctrlKey&&e.key==="Escape"){e.preventDefault();setStart(true)}};addEventListener("keydown",k);return()=>removeEventListener("keydown",k)},[active,wins]);
