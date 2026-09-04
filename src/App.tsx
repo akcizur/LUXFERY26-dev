@@ -3,7 +3,7 @@ import type {CSSProperties,ReactNode} from "react";
 import {bootSteps,loadRegistry,saveRegistry,loadSession,saveSession} from "./core/runtime";
 import type {DesktopSettings,Registry} from "./core/runtime";
 
-type AppId="explorer"|"notepad"|"calculator"|"paint"|"minesweeper"|"system";
+type AppId="explorer"|"notepad"|"calculator"|"paint"|"minesweeper"|"system"|"run";
 type Win={id:number;app:AppId;title:string;x:number;y:number;w:number;h:number;minimized:boolean;maximized:boolean;top:boolean};
 type Node={name:string;type:"folder"|"file";size?:string;ext?:string;children?:Node[]};
 
