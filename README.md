@@ -1,5 +1,5 @@
-# LUXFERY 26
-Windows 98 style desktop runtime — React + TypeScript + Vite.
+# Macroloft Luxfers 27
+Macroloft Luxfers 27 desktop runtime — React + TypeScript + Vite.
 
 ## Current foundation
 - Win98 desktop, taskbar, Start menu, desktop shortcuts
