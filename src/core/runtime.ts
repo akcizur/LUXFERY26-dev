@@ -37,7 +37,7 @@ export const defaultSettings: DesktopSettings = {
 export const defaultRegistry: Registry = {
   HKCU: { Desktop: { settings: defaultSettings, iconPositions: {}, windowPositions: {} },
     Explorer: { runMRU: [], recentDocs: [], history: [] } },
-  HKLM: { System: { version: "Windows 98", build: "LUXFERY 26.09.04", computerName: "LUXFERY-PC" } },
+  HKLM: { System: { version: "Macroloft Luxfers 27", build: "LUXFERY 26.09.04", computerName: "LUXFERY-PC" } },
 };
 
 const REGISTRY_KEY = "luxfery26:registry";
