@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FILESYSTEM_KEY, loadRegistry, saveRegistry } from "../core/runtime";
+import "./DesktopDragController.css";
 
 type FsNode = {
   id?: string;
@@ -119,7 +120,8 @@ function trashItem(sourceId: string) {
 
 export function DesktopDragController() {
   const dragRef = useRef<HTMLElement | null>(null);
-  const [dropTarget, setDropTarget] = useState<HTMLElement | null>(null);
+  const dropTargetRef = useRef<HTMLElement | null>(null);
+  const [, forceRender] = useState(0);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -133,20 +135,22 @@ export function DesktopDragController() {
       const source = dragRef.current;
       if (!source) return;
       const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>(".desktop-icon") ?? null;
-      if (target?.innerText.trim().startsWith("Koš")) {
-        if (dropTarget !== target) setDropTarget(target);
-      } else if (dropTarget) {
-        setDropTarget(null);
+      const nextTarget = target?.innerText.trim().startsWith("Koš") ? target : null;
+      if (dropTargetRef.current !== nextTarget) {
+        dropTargetRef.current = nextTarget;
+        forceRender((value) => value + 1);
       }
     };
 
-    const onPointerUp = (event: PointerEvent) => {
+    const onPointerUp = () => {
       const source = dragRef.current;
       if (!source) return;
       dragRef.current = null;
+      const dropTarget = dropTargetRef.current;
+      dropTargetRef.current = null;
+      forceRender((value) => value + 1);
       if (dropTarget) {
         trashItem(iconIdForButton(source) ?? "");
-        setDropTarget(null);
         return;
       }
       const id = iconIdForButton(source);
@@ -174,12 +178,11 @@ export function DesktopDragController() {
       window.removeEventListener("pointermove", onPointerMove, true);
       window.removeEventListener("pointerup", onPointerUp, true);
     };
-  }, [dropTarget]);
+  }, []);
 
   useEffect(() => {
-    document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.toggle("desktop-icon-drop-target", icon === dropTarget));
-    return () => document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.remove("desktop-icon-drop-target"));
-  }, [dropTarget]);
+    document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.toggle("desktop-icon-drop-target", icon === dropTargetRef.current));
+  });
 
   return null;
 }
