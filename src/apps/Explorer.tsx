@@ -29,13 +29,30 @@ function Button({ children, onClick, disabled = false }: { children: ReactNode; 
 
 export function Explorer({ onLaunch, onNotify }: Props) {
   const [fs, setFs] = useState<FsNode>(() => loadFs());
-  const [currentId, setCurrentId] = useState("root");
+  const [currentId, setCurrentId] = useState(() => localStorage.getItem("luxfery26:explorer-path") ?? "root");
   const [query, setQuery] = useState("");
   const [details, setDetails] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<FsNode[]>([]);
   const [menu, setMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refresh = () => setFs(loadFs());
+    const onOpenPath = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string }>).detail;
+      if (!detail?.id) return;
+      const fresh = loadFs();
+      if (!findNode(fresh, detail.id)) return;
+      setFs(fresh);
+      setCurrentId(detail.id);
+      localStorage.setItem("luxfery26:explorer-path", detail.id);
+      clearSelection();
+    };
+    window.addEventListener("luxfery:filesystem-changed", refresh);
+    window.addEventListener("luxfery:explorer-open-path", onOpenPath);
+    return () => { window.removeEventListener("luxfery:filesystem-changed", refresh); window.removeEventListener("luxfery:explorer-open-path", onOpenPath); };
+  }, []);
 
   const current = findNode(fs, currentId) ?? fs;
   const items = useMemo(() => (current.children ?? []).filter((item) => !item.deleted && item.name.toLowerCase().includes(query.toLowerCase())), [current, query]);
@@ -45,9 +62,10 @@ export function Explorer({ onLaunch, onNotify }: Props) {
   const commit = (next: FsNode) => { setFs(next); persist(next); window.dispatchEvent(new CustomEvent("luxfery:filesystem-changed")); };
   const select = (id: string, additive = false) => setSelectedIds((previous) => additive ? previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id] : [id]);
   const clearSelection = () => setSelectedIds([]);
-  const open = (node: FsNode) => { setMenu(null); setOpenMenu(null); if (node.type === "folder") { setCurrentId(node.id); clearSelection(); playSystemSound("open", true); return; } if (node.ext?.toLowerCase() === ".txt") { localStorage.setItem(OPEN_FILE_KEY, JSON.stringify({ id: node.id, name: node.name, path: pathFor(fs, node.id) })); onLaunch("notepad", true); } else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
-  const goRoot = () => { setCurrentId("root"); clearSelection(); };
-  const goParent = () => { if (currentId === "root") return; const parent = findParent(fs, currentId); if (parent) { setCurrentId(parent.id); clearSelection(); } };
+  const setPath = (id: string) => { setCurrentId(id); localStorage.setItem("luxfery26:explorer-path", id); clearSelection(); };
+  const open = (node: FsNode) => { setMenu(null); setOpenMenu(null); if (node.type === "folder") { setPath(node.id); playSystemSound("open", true); return; } if (node.ext?.toLowerCase() === ".txt") { localStorage.setItem(OPEN_FILE_KEY, JSON.stringify({ id: node.id, name: node.name, path: pathFor(fs, node.id) })); onLaunch("notepad", true); } else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
+  const goRoot = () => setPath("root");
+  const goParent = () => { if (currentId === "root") return; const parent = findParent(fs, currentId); if (parent) setPath(parent.id); };
   const createFolder = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nová složka"); commit(updateTree(fs, currentId, (value) => ({ ...value, children: [...(value.children ?? []), { id: crypto.randomUUID(), name, type: "folder", children: [] }] }))); notify("Explorer", `Vytvořena složka „${name}“.`, "success"); };
   const createText = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nový dokument.txt"); commit(updateTree(fs, currentId, (value) => ({ ...value, children: [...(value.children ?? []), { id: crypto.randomUUID(), name, type: "file", ext: ".txt", size: "0 B", content: "" }] }))); notify("Explorer", `Vytvořen soubor „${name}“.`, "success"); };
   const rename = () => { if (!primary || primary.id === "root") return; const value = window.prompt("Nový název:", primary.name)?.trim(); if (!value) return; const parent = findParent(fs, primary.id); if (!parent) return; const nextName = uniqueName({ ...parent, children: (parent.children ?? []).filter((child) => child.id !== primary.id) }, value); commit(updateTree(fs, primary.id, (node) => ({ ...node, name: nextName }))); notify("Explorer", `Položka přejmenována na „${nextName}“.`, "success"); };
@@ -59,18 +77,13 @@ export function Explorer({ onLaunch, onNotify }: Props) {
 
   useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.ctrlKey && event.key.toLowerCase() === "c" && selected.length) { event.preventDefault(); copySelected(); } else if (event.ctrlKey && event.key.toLowerCase() === "v" && clipboard.length) { event.preventDefault(); paste(); } else if (event.key === "F2" && primary) { event.preventDefault(); rename(); } else if (event.key === "Delete" && selected.length) { event.preventDefault(); removeSelected(); } else if (event.key === "Escape") { setMenu(null); setOpenMenu(null); } }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [selected.length, primary?.id, clipboard.length, currentId, fs]);
   const menuAction = (action: string) => { setOpenMenu(null); if (action === "new-folder") createFolder(); else if (action === "new-text") createText(); else if (action === "rename") rename(); else if (action === "copy") copySelected(); else if (action === "paste") paste(); else if (action === "delete") removeSelected(); else if (action === "root") goRoot(); else if (action === "view-icons") setDetails(false); else if (action === "view-details") setDetails(true); };
-
-  const menus: Array<[string, Array<[string, string]>]> = [
-    ["Soubor", [["new-folder", "Nová složka"], ["new-text", "Nový textový dokument"], ["root", "Přejít na C:\\"]]],
-    ["Úpravy", [["copy", "Kopírovat"], ["paste", "Vložit"], ["rename", "Přejmenovat"], ["delete", "Odstranit"]]],
-    ["Zobrazit", [["view-icons", "Velké ikony"], ["view-details", "Podrobnosti"]]],
-  ];
+  const menus: Array<[string, Array<[string, string]>]> = [["Soubor", [["new-folder", "Nová složka"], ["new-text", "Nový textový dokument"], ["root", "Přejít na C:\\"]]], ["Úpravy", [["copy", "Kopírovat"], ["paste", "Vložit"], ["rename", "Přejmenovat"], ["delete", "Odstranit"]]], ["Zobrazit", [["view-icons", "Velké ikony"], ["view-details", "Podrobnosti"]]]];
 
   return <div className="app-fill" onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); setOpenMenu(null); }}>
     <div className="menu">{menus.map(([label, entries]) => <div className="menu-root" key={label}><button className="menu-trigger" onClick={(event) => { event.stopPropagation(); setOpenMenu((value) => value === label ? null : label); }}>{label}</button>{openMenu === label && <div className="dropdown-menu">{entries.map(([id, text]) => <button className="menu-entry" key={id} disabled={(id === "copy" || id === "rename" || id === "delete") && !selected.length || id === "paste" && !clipboard.length} onClick={() => menuAction(id)}>{text}</button>)}</div>}</div>)}</div>
     <div className="toolbar"><Button onClick={goRoot}>←</Button><Button onClick={goParent}>↑</Button><Button onClick={createFolder}>Nová složka</Button><Button onClick={createText}>Nový TXT</Button><Button onClick={rename} disabled={!primary}>Přejmenovat</Button><Button onClick={copySelected} disabled={!selected.length}>Kopírovat</Button><Button onClick={paste} disabled={!clipboard.length}>Vložit</Button><Button onClick={removeSelected} disabled={!selected.length}>Odstranit</Button><input className="sunken path" value={pathFor(fs, currentId)} readOnly aria-label="Cesta" /><input className="sunken search" placeholder="Hledat" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Hledat" /></div>
     <div className="explorer">
-      <div className="tree sunken"><button onClick={goRoot}>▣ C:\</button>{(fs.children ?? []).map((item) => <button key={item.id} onClick={() => { setCurrentId(item.id); clearSelection(); }}>📁 {item.name}{item.id === "recycle" ? ` (${item.children?.length ?? 0})` : ""}</button>)}</div>
+      <div className="tree sunken"><button onClick={goRoot}>▣ C:\</button>{(fs.children ?? []).map((item) => <button key={item.id} onClick={() => setPath(item.id)}>📁 {item.name}{item.id === "recycle" ? ` (${item.children?.length ?? 0})` : ""}</button>)}</div>
       <div className="files sunken" onClick={clearSelection}>{details ? <table><thead><tr><th>Název</th><th>Velikost</th><th>Typ</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={selectedIds.includes(item.id) ? "selected-row" : ""} onClick={(event) => { event.stopPropagation(); select(item.id, event.ctrlKey); }} onDoubleClick={() => open(item)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!selectedIds.includes(item.id)) select(item.id); setMenu({ x: event.clientX, y: event.clientY, targetId: item.id }); }}><td>{item.type === "folder" ? "📁" : "📄"} {item.name}</td><td>{item.size ?? ""}</td><td>{item.ext ?? "Složka"}</td></tr>)}</tbody></table> : <div className="icons">{items.map((item) => <button className={`file-icon ${selectedIds.includes(item.id) ? "selected-file" : ""}`} key={item.id} onClick={(event) => { event.stopPropagation(); select(item.id, event.ctrlKey); }} onDoubleClick={() => open(item)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!selectedIds.includes(item.id)) select(item.id); setMenu({ x: event.clientX, y: event.clientY, targetId: item.id }); }}><span>{item.type === "folder" ? "📁" : "📄"}</span><b>{item.name}</b></button>)}</div>}</div>
     </div>
     <div className="status">Cesta: {pathFor(fs, currentId)}<span/>Položek: {items.length}<span/>{selected.length > 0 && `Vybráno: ${selected.length}`}<span/>{currentId === "recycle" && <Button onClick={emptyRecycle}>Vysypat koš</Button>}{selected.some((item) => item.deleted) && <Button onClick={restoreSelected}>Obnovit</Button>}<Button onClick={() => setDetails(!details)}>{details ? "Ikony" : "Podrobnosti"}</Button></div>
