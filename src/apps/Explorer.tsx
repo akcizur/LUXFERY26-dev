@@ -4,8 +4,7 @@ import { FILESYSTEM_KEY, OPEN_FILE_KEY } from "../core/runtime";
 import { playSystemSound } from "../core/system";
 
 type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; content?: string; children?: FsNode[]; deleted?: boolean };
-
-type Props = { onLaunch: (id: string) => void; onNotify?: (title: string, message: string, tone?: "info" | "success" | "warning" | "error") => void };
+type Props = { onLaunch: (id: string, forceNew?: boolean) => void; onNotify?: (title: string, message: string, tone?: "info" | "success" | "warning" | "error") => void };
 
 const seed: FsNode = {
   id: "root", name: "C:\\", type: "folder", children: [
