@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FILESYSTEM_KEY, OPEN_FILE_KEY } from "../core/runtime";
 import type { ReactNode } from "react";
 
 type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; content?: string; children?: FsNode[]; deleted?: boolean };
 type OpenFile = { id: string; name: string; path: string } | null;
-type Props = { windowId?: string };
 
 function Button({ children, onClick, disabled = false }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) {
   return <button className="win-btn" disabled={disabled} onClick={onClick}>{children}</button>;
@@ -42,18 +41,20 @@ function readOpenFile(): OpenFile {
   catch { return null; }
 }
 
-function emitDirty(windowId: string | undefined, dirty: boolean) {
-  if (!windowId) return;
-  window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId, dirty } }));
-}
-
-export function Notepad({ windowId }: Props) {
+export function Notepad() {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [openFile, setOpenFile] = useState<OpenFile>(() => readOpenFile());
   const [text, setText] = useState("");
   const [wrap, setWrap] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const title = useMemo(() => `${openFile?.name ?? "Bez názvu"}${dirty ? " *" : ""}`, [openFile, dirty]);
+
+  const windowId = rootRef.current?.closest<HTMLElement>("[data-window-id]")?.dataset.windowId;
+  const emitDirty = (value: boolean) => {
+    if (!windowId) return;
+    window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId, dirty: value } }));
+  };
 
   useEffect(() => {
     const file = readOpenFile();
@@ -62,11 +63,12 @@ export function Notepad({ windowId }: Props) {
     const node = file && fs ? findNode(fs, file.id) : null;
     setText(node?.content ?? "");
     setDirty(false);
-    emitDirty(windowId, false);
-    return () => emitDirty(windowId, false);
+    const id = windowId;
+    if (id) window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId: id, dirty: false } }));
+    return () => { if (id) window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId: id, dirty: false } })); };
   }, [windowId]);
 
-  const markDirty = (value: boolean) => { setDirty(value); emitDirty(windowId, value); };
+  const markDirty = (value: boolean) => { setDirty(value); emitDirty(value); };
 
   const saveCurrent = () => {
     if (!openFile) return saveAs();
@@ -127,14 +129,14 @@ export function Notepad({ windowId }: Props) {
   useEffect(() => {
     const onRequestClose = (event: Event) => {
       const custom = event as CustomEvent<{ windowId?: string; cancel?: boolean }>;
-      if (custom.detail?.windowId !== windowId || !dirty) return;
+      if (!windowId || custom.detail?.windowId !== windowId || !dirty) return;
       if (!window.confirm(`„${openFile?.name ?? "Bez názvu"}" obsahuje neuložené změny. Zavřít bez uložení?`)) custom.detail.cancel = true;
     };
     window.addEventListener("luxfery:request-close", onRequestClose);
     return () => window.removeEventListener("luxfery:request-close", onRequestClose);
   }, [dirty, openFile, windowId]);
 
-  return <div className="app-fill">
+  return <div className="app-fill" ref={rootRef}>
     <div className="menu"><button className="menu-trigger" onClick={saveCurrent}>Soubor</button><button className="menu-trigger">Úpravy</button><button className="menu-trigger">Hledat</button><button className="menu-trigger">Formát</button><button className="menu-trigger">Nápověda</button></div>
     <div className="toolbar"><Button onClick={newDocument}>Nový</Button><Button onClick={saveCurrent}>Uložit</Button><Button onClick={saveAs}>Uložit jako…</Button><Button onClick={() => navigator.clipboard?.writeText(text)}>Kopírovat</Button><Button onClick={() => setWrap(!wrap)}>Zalamování: {wrap ? "Ano" : "Ne"}</Button></div>
     <div className="notepad-titlebar">{title}</div>
