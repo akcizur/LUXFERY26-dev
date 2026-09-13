@@ -25,3 +25,17 @@ button,input,select,textarea{font:inherit}
 .retro-background{z-index:-3;display:block;image-rendering:-moz-crisp-edges;image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;image-rendering:pixelated}
 .retro-vignette{z-index:-2;background:radial-gradient(circle at center,transparent 40%,rgba(0,0,0,.55) 100%)}
 .retro-scanlines{z-index:-1;background:linear-gradient(rgba(0,0,0,0) 50%,rgba(0,0,0,.15) 50%);background-size:100% 4px}
+
+/* Windows 98 interaction layer */
+.os-context-menu{z-index:50000;min-width:205px}
+.os-context-menu button{padding:4px 9px;min-height:24px}
+.os-modal-backdrop{position:fixed;inset:0;z-index:50001;background:transparent;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.os-properties{width:min(420px,calc(100vw - 24px));background:#c0c0c0;border:2px solid #fff;box-shadow:5px 5px #404040;outline:1px solid #000}
+.os-properties .titlebar{background:#000080;color:#fff}
+.os-properties .titlebar button{width:18px;height:16px;margin-left:auto;padding:0;line-height:12px;font-weight:700}
+.os-properties-body{padding:16px;background:#c0c0c0}
+.properties-icon{float:left;width:56px;height:56px;display:grid;place-items:center;font-size:34px;margin-right:14px;border:2px solid #fff;border-right-color:#404040;border-bottom-color:#404040;background:#c0c0c0}
+.os-properties-body h3{margin:6px 0 14px;font-size:14px}
+.os-properties-body dl{clear:both;display:grid;grid-template-columns:80px 1fr;gap:5px 12px;margin:18px 0 0}.os-properties-body dt{font-weight:700}.os-properties-body dd{margin:0;background:#fff;border:2px solid #808080;padding:3px 5px;min-height:20px}
+.os-properties-actions{display:flex;justify-content:flex-end;padding:7px;border-top:1px solid #808080}
+
