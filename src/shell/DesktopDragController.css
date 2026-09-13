@@ -1,10 +1,21 @@
 .desktop-icon-drop-target{outline:2px solid #fff!important;outline-offset:1px;background:rgba(0,0,128,.75)!important;color:#fff!important;text-shadow:1px 1px #000!important;transform:scale(1.04)}
 .desktop-icon{transition:transform .08s ease,background .08s ease}
-
-.desktop-folder-surface{position:absolute;left:0;right:0;top:0;bottom:30px;z-index:15;pointer-events:auto;background:transparent}
+.desktop-folder-surface{position:absolute;left:0;right:0;top:0;bottom:30px;z-index:15;display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:4px;pointer-events:auto;background:transparent}
+.desktop-folder-surface-main{position:relative;min-width:0;height:100%;overflow:auto}
 .desktop-folder-icon{position:absolute;width:76px;height:78px;border:1px dotted transparent;background:transparent;color:#fff;text-shadow:1px 1px #000;padding:3px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;cursor:default;font:inherit}
 .desktop-folder-icon:hover,.desktop-folder-icon:focus{border-color:#fff;background:rgba(0,0,128,.25);outline:0}
 .desktop-folder-icon span{font-size:28px;line-height:32px}
 .desktop-folder-icon b{font-weight:400;text-align:center;overflow-wrap:anywhere;max-width:72px}
 .desktop-folder-back{left:16px;top:16px}
 .desktop-folder-back span{font-size:34px;line-height:32px;font-weight:700}
+.desktop-folder-side{display:flex;flex-direction:column;min-width:250px;overflow:hidden;background:#c0c0c0!important}
+.desktop-folder-panel-title{height:24px;display:flex;align-items:center;padding:3px 7px;background:#000080;color:#fff;font-weight:700;flex:0 0 auto}
+.desktop-folder-tree{flex:1;min-height:0;overflow:auto;background:#fff;padding:2px 0}
+.desktop-folder-tree-row{display:flex;width:100%;min-height:22px;border:0;background:#fff;align-items:center;gap:6px;text-align:left;padding-top:2px;padding-bottom:2px;font:inherit}
+.desktop-folder-tree-row:hover,.desktop-folder-tree-row.active{background:#000080;color:#fff}
+.desktop-folder-overview{border-top:2px solid #808080;background:#c0c0c0;padding-bottom:9px;display:flex;flex-direction:column;gap:5px;min-height:170px}
+.desktop-folder-preview-icon{font-size:42px;text-align:center;padding:10px 0 2px}
+.desktop-folder-overview strong{padding:0 9px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desktop-folder-preview-path{margin:0 9px;padding:4px;background:#fff;border-top:2px solid #808080;border-left:2px solid #808080;border-right:2px solid #fff;border-bottom:2px solid #fff;overflow-wrap:anywhere;line-height:1.25}
+.desktop-folder-meta{padding:0 9px;color:#404040}
+@media(max-width:760px){.desktop-folder-surface{grid-template-columns:minmax(0,1fr) 230px}.desktop-folder-side{min-width:210px}}
