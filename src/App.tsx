@@ -5,6 +5,7 @@ import type { DesktopSettings, Registry } from "./core/runtime";
 import { appMap, apps, categories, type AppCategory, type AppDefinition } from "./core/apps";
 import { WindowFrame, type ManagedWindow } from "./desktop/WindowManager";
 import { RunDialog } from "./apps/RunDialog";
+import { Explorer as FileExplorer } from "./apps/Explorer";
 
 type FsNode = { name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[] };
 type ShellWindow = ManagedWindow & { appId: string; category?: AppCategory };
@@ -71,7 +72,7 @@ function MenuBar({ items }: { items: string[] }) {
   return <div className="menu" role="menubar" aria-label="Aplikační nabídka">{items.map((item) => <button key={item} className="menu-trigger">{item}</button>)}</div>;
 }
 
-function Explorer({ initialPath = "C:\\", onLaunch }: { initialPath?: string; onLaunch: (id: string) => void }) {
+function LegacyExplorer({ initialPath = "C:\\", onLaunch }: { initialPath?: string; onLaunch: (id: string) => void }) {
   const [path, setPath] = useState(initialPath);
   const [query, setQuery] = useState("");
   const [details, setDetails] = useState(false);
@@ -195,7 +196,7 @@ function App() {
     if (!definition) return null;
     if (definition.kind === "external") return <ExternalApp app={definition} />;
     switch (windowData.appId) {
-      case "explorer": return <Explorer onLaunch={launch} />;
+      case "explorer": return <FileExplorer onLaunch={launch} />;
       case "notepad": return <Notepad />;
       case "calculator": return <Calculator />;
       case "paint": return <Paint />;
