@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
-import { bootSteps, loadRegistry, loadSession, saveRegistry, saveSession } from "./core/runtime";
+import { FILESYSTEM_KEY, bootSteps, loadRegistry, loadSession, saveRegistry, saveSession } from "./core/runtime";
 import type { DesktopSettings, Registry } from "./core/runtime";
 import { appMap, apps, categories, type AppCategory, type AppDefinition } from "./core/apps";
 import { WindowFrame, type ManagedWindow } from "./desktop/WindowManager";
@@ -8,10 +8,10 @@ import { RunDialog } from "./apps/RunDialog";
 import { Explorer as FileExplorer } from "./apps/Explorer";
 import { Notepad as VirtualNotepad } from "./apps/Notepad";
 
-type FsNode = { name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[] };
+type FsNode = { name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[]; content?: string; deleted?: boolean; id?: string };
 type ShellWindow = ManagedWindow & { appId: string; category?: AppCategory };
 type SessionState = { windows: ShellWindow[]; nextZ: number };
-type DesktopEntry = { id: string; appId?: string; category?: AppCategory; label: string; icon: string };
+type DesktopEntry = { id: string; appId?: string; category?: AppCategory; label: string; icon: string; fsId?: string; fsType?: FsNode["type"] };
 
 const initialFs: FsNode = {
   name: "C:\\", type: "folder", children: [
@@ -53,78 +53,34 @@ function loadSavedSession(): SessionState {
   return { windows: migrated, nextZ: Number(saved.nextZ) || 20 };
 }
 
+function readVirtualFs(): FsNode | null { try { const raw = localStorage.getItem(FILESYSTEM_KEY); return raw ? JSON.parse(raw) as FsNode : null; } catch { return null; } }
+function writeVirtualFs(fs: FsNode) { localStorage.setItem(FILESYSTEM_KEY, JSON.stringify(fs)); window.dispatchEvent(new CustomEvent("luxfery:filesystem-changed")); }
+function findVirtualNode(root: FsNode, id: string): FsNode | null { if (root.id === id) return root; for (const child of root.children ?? []) { if (!child.id) continue; const found = findVirtualNode(child, id); if (found) return found; } return null; }
+function updateVirtualTree(root: FsNode, id: string, updater: (node: FsNode) => FsNode): FsNode { if (root.id === id) return updater(root); return { ...root, children: root.children?.map((child) => updateVirtualTree(child, id, updater)) }; }
+function desktopPath(root: FsNode, id: string, current = "C:\\"): string { if (root.id === id) return current; for (const child of root.children ?? []) { if (!child.id) continue; const next = current === "C:\\" ? `C:\\${child.name}` : `${current}\\${child.name}`; const hit = desktopPath(child, id, next); if (hit) return hit; } return current; }
+
 function BootScreen({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
-  useEffect(() => {
-    const timer = window.setInterval(() => setStep((value) => Math.min(value + 1, bootSteps.length)), 150);
-    return () => window.clearInterval(timer);
-  }, []);
-  useEffect(() => {
-    if (step >= bootSteps.length) {
-      const timer = window.setTimeout(onDone, 450);
-      return () => window.clearTimeout(timer);
-    }
-  }, [step, onDone]);
+  useEffect(() => { const timer = window.setInterval(() => setStep((value) => Math.min(value + 1, bootSteps.length)), 150); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { if (step >= bootSteps.length) { const timer = window.setTimeout(onDone, 450); return () => window.clearTimeout(timer); } }, [step, onDone]);
   const pct = Math.round((step / bootSteps.length) * 100);
   return <div className="boot-screen"><div className="boot-logo">Macroloft <b>LUXFERY 26</b></div><div className="boot-panel"><b>LUXFERY 26 BIOS</b>{bootSteps.slice(0, step).map(([name, message]) => <div key={name} className="boot-ok">[OK] {name} — {message}</div>)}{step < bootSteps.length && <div>[....] {bootSteps[step][0]} — {bootSteps[step][1]}</div>}<div className="boot-progress"><i style={{ width: `${pct}%` }} /></div><div className="boot-pct">{pct}%</div></div></div>;
 }
 
-function MenuBar({ items }: { items: string[] }) {
-  return <div className="menu" role="menubar" aria-label="Aplikační nabídka">{items.map((item) => <button key={item} className="menu-trigger">{item}</button>)}</div>;
-}
+function MenuBar({ items }: { items: string[] }) { return <div className="menu" role="menubar" aria-label="Aplikační nabídka">{items.map((item) => <button key={item} className="menu-trigger">{item}</button>)}</div>; }
 
 function LegacyExplorer({ initialPath = "C:\\", onLaunch }: { initialPath?: string; onLaunch: (id: string) => void }) {
-  const [path, setPath] = useState(initialPath);
-  const [query, setQuery] = useState("");
-  const [details, setDetails] = useState(false);
-  const find = (value: string): FsNode => {
-    let node = initialFs;
-    const parts = value.replace("C:\\", "").split("\\").filter(Boolean);
-    for (const part of parts) node = (node.children ?? []).find((child) => child.name === part) ?? node;
-    return node;
-  };
-  const current = find(path);
-  const items = (current.children ?? []).filter((item) => item.name.toLowerCase().includes(query.toLowerCase()));
-  const openNode = (node: FsNode) => {
-    if (node.type === "folder") {
-      setPath(path === "C:\\" ? `C:\\${node.name}` : `${path}\\${node.name}`);
-      return;
-    }
-    if (node.ext === ".txt") onLaunch("notepad");
-  };
-  const parent = () => {
-    if (path === "C:\\") return;
-    const parts = path.split("\\").filter(Boolean);
-    parts.pop();
-    setPath(parts.length ? `${parts[0]}\\` + parts.slice(1).join("\\") : "C:\\");
-  };
-  return <div className="app-fill">
-    <MenuBar items={["Soubor", "Úpravy", "Zobrazit", "Nástroje", "Nápověda"]} />
-    <div className="toolbar"><Button onClick={() => setPath("C:\\")}>←</Button><Button onClick={parent}>↑</Button><input className="sunken path" value={path} onChange={(event) => setPath(event.target.value)} aria-label="Cesta" /><input className="sunken search" placeholder="Hledat" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Hledat" /></div>
-    <div className="explorer">
-      <div className="tree sunken"><button onClick={() => setPath("C:\\")}>▣ C:\</button>{(initialFs.children ?? []).map((item) => <button key={item.name} onClick={() => item.type === "folder" && setPath(`C:\\${item.name}`)}>📁 {item.name}</button>)}</div>
-      <div className="files sunken">{details ? <table><thead><tr><th>Název</th><th>Velikost</th><th>Typ</th></tr></thead><tbody>{items.map((item) => <tr key={item.name} onDoubleClick={() => openNode(item)}><td>{item.type === "folder" ? "📁" : "📄"} {item.name}</td><td>{item.size ?? ""}</td><td>{item.ext ?? "Složka"}</td></tr>)}</tbody></table> : <div className="icons">{items.map((item) => <button className="file-icon" key={item.name} onDoubleClick={() => openNode(item)}><span>{item.type === "folder" ? "📁" : "📄"}</span><b>{item.name}</b></button>)}</div>}</div>
-    </div>
-    <div className="status">Počet položek: {items.length}<span /><Button onClick={() => setDetails(!details)}>{details ? "Ikony" : "Podrobnosti"}</Button></div>
-  </div>;
+  const [path, setPath] = useState(initialPath); const [query, setQuery] = useState(""); const [details, setDetails] = useState(false);
+  const find = (value: string): FsNode => { let node = initialFs; const parts = value.replace("C:\\", "").split("\\").filter(Boolean); for (const part of parts) node = (node.children ?? []).find((child) => child.name === part) ?? node; return node; };
+  const current = find(path); const items = (current.children ?? []).filter((item) => item.name.toLowerCase().includes(query.toLowerCase()));
+  const openNode = (node: FsNode) => { if (node.type === "folder") { setPath(path === "C:\\" ? `C:\\${node.name}` : `${path}\\${node.name}`); return; } if (node.ext === ".txt") onLaunch("notepad"); };
+  const parent = () => { if (path === "C:\\") return; const parts = path.split("\\").filter(Boolean); parts.pop(); setPath(parts.length ? `${parts[0]}\\` + parts.slice(1).join("\\") : "C:\\"); };
+  return <div className="app-fill"><MenuBar items={["Soubor", "Úpravy", "Zobrazit", "Nástroje", "Nápověda"]} /><div className="toolbar"><Button onClick={() => setPath("C:\\")}>←</Button><Button onClick={parent}>↑</Button><input className="sunken path" value={path} onChange={(event) => setPath(event.target.value)} aria-label="Cesta" /><input className="sunken search" placeholder="Hledat" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Hledat" /></div><div className="explorer"><div className="tree sunken"><button onClick={() => setPath("C:\\")}>▣ C:\</button>{(initialFs.children ?? []).map((item) => <button key={item.name} onClick={() => item.type === "folder" && setPath(`C:\\${item.name}`)}>📁 {item.name}</button>)}</div><div className="files sunken">{details ? <table><thead><tr><th>Název</th><th>Velikost</th><th>Typ</th></tr></thead><tbody>{items.map((item) => <tr key={item.name} onDoubleClick={() => openNode(item)}><td>{item.type === "folder" ? "📁" : "📄"} {item.name}</td><td>{item.size ?? ""}</td><td>{item.ext ?? "Složka"}</td></tr>)}</tbody></table> : <div className="icons">{items.map((item) => <button className="file-icon" key={item.name} onDoubleClick={() => openNode(item)}><span>{item.type === "folder" ? "📁" : "📄"}</span><b>{item.name}</b></button>)}</div>}</div></div><div className="status">Počet položek: {items.length}<span /><Button onClick={() => setDetails(!details)}>{details ? "Ikony" : "Podrobnosti"}</Button></div></div>;
 }
 
-function Notepad() {
-  const [text, setText] = useState("Vítejte v LUXFERY 26.\n\nWindows 98, ale běží v roce 2026.");
-  const [wrap, setWrap] = useState(true);
-  return <div className="app-fill"><MenuBar items={["Soubor", "Úpravy", "Hledat", "Formát", "Nápověda"]} /><div className="toolbar"><Button onClick={() => setText("")}>Nový</Button><Button onClick={() => navigator.clipboard?.writeText(text)}>Kopírovat</Button><Button onClick={() => setWrap(!wrap)}>Zalamování: {wrap ? "Ano" : "Ne"}</Button></div><textarea className="editor sunken" value={text} onChange={(event) => setText(event.target.value)} style={{ whiteSpace: wrap ? "pre-wrap" : "pre" }} /><div className="status">Řádky: {text.split("\n").length}<span />Znaky: {text.length}<span />UTF-8</div></div>;
-}
+function Notepad() { const [text, setText] = useState("Vítejte v LUXFERY 26.\n\nWindows 98, ale běží v roce 2026."); const [wrap, setWrap] = useState(true); return <div className="app-fill"><MenuBar items={["Soubor", "Úpravy", "Hledat", "Formát", "Nápověda"]} /><div className="toolbar"><Button onClick={() => setText("")}>Nový</Button><Button onClick={() => navigator.clipboard?.writeText(text)}>Kopírovat</Button><Button onClick={() => setWrap(!wrap)}>Zalamování: {wrap ? "Ano" : "Ne"}</Button></div><textarea className="editor sunken" value={text} onChange={(event) => setText(event.target.value)} style={{ whiteSpace: wrap ? "pre-wrap" : "pre" }} /><div className="status">Řádky: {text.split("\n").length}<span />Znaky: {text.length}<span />UTF-8</div></div>; }
 
-function Calculator() {
-  const [value, setValue] = useState("0");
-  const [accumulator, setAccumulator] = useState<number | null>(null);
-  const [operator, setOperator] = useState<string | null>(null);
-  const digit = (digitValue: string) => setValue((previous) => previous === "0" && digitValue !== "." ? digitValue : previous + digitValue);
-  const calculate = () => { if (accumulator === null || !operator) return; const b = Number(value); const result = operator === "+" ? accumulator + b : operator === "-" ? accumulator - b : operator === "*" ? accumulator * b : b === 0 ? NaN : accumulator / b; setValue(Number.isFinite(result) ? String(result) : "Error"); setAccumulator(null); setOperator(null); };
-  const choose = (op: string) => { setAccumulator(Number(value)); setOperator(op); setValue("0"); };
-  const keys = ["7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "0", ".", "=", "+"];
-  return <div className="calc"><div className="lcd">{value}</div><div className="calc-grid">{keys.map((key) => <Button key={key} onClick={() => key === "=" ? calculate() : "+-*/".includes(key) ? choose(key) : digit(key)}>{key}</Button>)}<Button onClick={() => { setValue("0"); setAccumulator(null); setOperator(null); }}>C</Button><Button onClick={() => setValue(String(Math.sqrt(Number(value))))}>√</Button><Button onClick={() => setValue(String(Number(value) * Number(value)))}>x²</Button></div></div>;
-}
+function Calculator() { const [value, setValue] = useState("0"); const [accumulator, setAccumulator] = useState<number | null>(null); const [operator, setOperator] = useState<string | null>(null); const digit = (digitValue: string) => setValue((previous) => previous === "0" && digitValue !== "." ? digitValue : previous + digitValue); const calculate = () => { if (accumulator === null || !operator) return; const b = Number(value); const result = operator === "+" ? accumulator + b : operator === "-" ? accumulator - b : operator === "*" ? accumulator * b : b === 0 ? NaN : accumulator / b; setValue(Number.isFinite(result) ? String(result) : "Error"); setAccumulator(null); setOperator(null); }; const choose = (op: string) => { setAccumulator(Number(value)); setOperator(op); setValue("0"); }; const keys = ["7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "0", ".", "=", "+"]; return <div className="calc"><div className="lcd">{value}</div><div className="calc-grid">{keys.map((key) => <Button key={key} onClick={() => key === "=" ? calculate() : "+-*/".includes(key) ? choose(key) : digit(key)}>{key}</Button>)}<Button onClick={() => { setValue("0"); setAccumulator(null); setOperator(null); }}>C</Button><Button onClick={() => setValue(String(Math.sqrt(Number(value))))}>√</Button><Button onClick={() => setValue(String(Number(value) * Number(value)))}>x²</Button></div></div>; }
 
 function Paint() { const canvas = useRef<HTMLCanvasElement>(null); const [drawing, setDrawing] = useState(false); useEffect(() => { const context = canvas.current?.getContext("2d"); if (context && canvas.current) { context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.current.width, canvas.current.height); } }, []); const draw = (event: ReactPointerEvent<HTMLCanvasElement>) => { if (!drawing || !canvas.current) return; const rect = canvas.current.getBoundingClientRect(); const context = canvas.current.getContext("2d"); if (!context) return; context.fillStyle = "#000"; context.fillRect(Math.floor((event.clientX - rect.left) * (640 / rect.width)), Math.floor((event.clientY - rect.top) * (360 / rect.height)), 4, 4); }; return <div className="app-fill"><MenuBar items={["Soubor", "Úpravy", "Zobrazit", "Obraz", "Barvy", "Nápověda"]} /><div className="paint"><aside>{["✎", "🖌", "▣", "◩", "⌕", "T", "／", "▭", "○"].map((tool) => <button className="tool" key={tool}>{tool}</button>)}</aside><div className="canvas sunken"><canvas ref={canvas} width="640" height="360" onPointerDown={() => setDrawing(true)} onPointerUp={() => setDrawing(false)} onPointerLeave={() => setDrawing(false)} onPointerMove={draw} /></div></div></div>; }
 
@@ -139,122 +95,54 @@ function ExternalApp({ app }: { app: AppDefinition }) { const [opened, setOpened
 function CategoryView({ category, onLaunch }: { category: AppCategory; onLaunch: (id: string) => void }) { const entries = apps.filter((app) => app.category === category); return <div className="app-fill"><MenuBar items={["Soubor", "Zobrazit", "Nápověda"]} /><div className="category-title">{category}</div><div className="icons category-icons">{entries.map((app) => <button className="file-icon" key={app.id} onDoubleClick={() => onLaunch(app.id)} onKeyDown={(event) => event.key === "Enter" && onLaunch(app.id)}><span>{app.icon}</span><b>{app.name}</b></button>)}</div></div>; }
 
 function App() {
-  const [booting, setBooting] = useState(true);
-  const [registry, setRegistry] = useState<Registry>(() => loadRegistry());
-  const savedSession = useMemo(loadSavedSession, []);
-  const [windows, setWindows] = useState<ShellWindow[]>(savedSession.windows);
-  const [nextZ, setNextZ] = useState(savedSession.nextZ);
-  const [activeId, setActiveId] = useState<string | null>(savedSession.windows.find((item) => !item.minimized)?.id ?? null);
-  const [startOpen, setStartOpen] = useState(false);
-  const [allProgramsOpen, setAllProgramsOpen] = useState(false);
-  const [clock, setClock] = useState(new Date());
-  const [desktopMenu, setDesktopMenu] = useState<{ x: number; y: number } | null>(null);
-
+  const [booting, setBooting] = useState(true); const [registry, setRegistry] = useState<Registry>(() => loadRegistry()); const savedSession = useMemo(loadSavedSession, []); const [windows, setWindows] = useState<ShellWindow[]>(savedSession.windows); const [nextZ, setNextZ] = useState(savedSession.nextZ); const [activeId, setActiveId] = useState<string | null>(savedSession.windows.find((item) => !item.minimized)?.id ?? null); const [startOpen, setStartOpen] = useState(false); const [allProgramsOpen, setAllProgramsOpen] = useState(false); const [clock, setClock] = useState(new Date()); const [desktopMenu, setDesktopMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null); const [selectedDesktopId, setSelectedDesktopId] = useState<string | null>(null); const [filesystemVersion, setFilesystemVersion] = useState(0);
   useEffect(() => { const timer = window.setInterval(() => setClock(new Date()), 1000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => saveRegistry(registry), [registry]);
-  useEffect(() => saveSession<SessionState>({ windows, nextZ }), [windows, nextZ]);
-
+  useEffect(() => saveRegistry(registry), [registry]); useEffect(() => saveSession<SessionState>({ windows, nextZ }), [windows, nextZ]);
+  useEffect(() => { const refresh = () => setFilesystemVersion((value) => value + 1); window.addEventListener("luxfery:filesystem-changed", refresh); return () => window.removeEventListener("luxfery:filesystem-changed", refresh); }, []);
   const settings = registry.HKCU.Desktop.settings;
   const updateSettings = useCallback((patch: Partial<DesktopSettings>) => setRegistry((current) => ({ ...current, HKCU: { ...current.HKCU, Desktop: { ...current.HKCU.Desktop, settings: { ...current.HKCU.Desktop.settings, ...patch } } } })), []);
-
-  const focusWindow = useCallback((id: string) => {
-    setNextZ((value) => {
-      const next = value + 1;
-      setWindows((current) => current.map((item) => item.id === id ? { ...item, minimized: false, zIndex: next } : item));
-      return next;
-    });
-    setActiveId(id);
-  }, []);
-
+  const notifyDesktop = useCallback((title: string, message: string, tone: "info" | "success" | "warning" = "info") => window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-desktop`, title, message, tone } })), []);
+  const focusWindow = useCallback((id: string) => { setNextZ((value) => { const next = value + 1; setWindows((current) => current.map((item) => item.id === id ? { ...item, minimized: false, zIndex: next } : item)); return next; }); setActiveId(id); }, []);
   const closeWindow = useCallback((id: string) => { setWindows((current) => current.filter((item) => item.id !== id)); setActiveId((current) => current === id ? null : current); }, []);
-
-  const launch = useCallback((id: string, forceNew = false, categoryOverride?: AppCategory) => {
-    const category = categoryOverride ?? (id.startsWith("category:") ? id.slice(9) as AppCategory : undefined);
-    const definition = category ? undefined : appMap.get(id);
-    if (!definition && !category) return;
-    setStartOpen(false); setAllProgramsOpen(false); setDesktopMenu(null);
-    const existing = !forceNew ? windows.find((item) => item.appId === id && !item.category) : undefined;
-    if (existing) { focusWindow(existing.id); return; }
-    const base = definition ?? { id, name: `${category}`, icon: "📁", category: category!, kind: "internal" as const, defaultWidth: 760, defaultHeight: 520 };
-    const serial = `${id}-${Date.now()}`;
-    const saved = registry.HKCU.Desktop.windowPositions[id];
-    const z = nextZ + 1;
-    const created: ShellWindow = { id: serial, appId: id, category, title: base.name, icon: base.icon, x: saved?.x ?? 70 + (windows.length % 6) * 28, y: saved?.y ?? 50 + (windows.length % 5) * 24, width: saved?.w ?? base.defaultWidth, height: saved?.h ?? base.defaultHeight, minimized: false, maximized: false, zIndex: z };
-    setNextZ(z); setWindows((current) => [...current, created]); setActiveId(serial);
-  }, [focusWindow, nextZ, registry.HKCU.Desktop.windowPositions, windows]);
-
+  const launch = useCallback((id: string, forceNew = false, categoryOverride?: AppCategory) => { const category = categoryOverride ?? (id.startsWith("category:") ? id.slice(9) as AppCategory : undefined); const definition = category ? undefined : appMap.get(id); if (!definition && !category) return; setStartOpen(false); setAllProgramsOpen(false); setDesktopMenu(null); const existing = !forceNew ? windows.find((item) => item.appId === id && !item.category) : undefined; if (existing) { focusWindow(existing.id); return; } const base = definition ?? { id, name: `${category}`, icon: "📁", category: category!, kind: "internal" as const, defaultWidth: 760, defaultHeight: 520 }; const serial = `${id}-${Date.now()}`; const saved = registry.HKCU.Desktop.windowPositions[id]; const z = nextZ + 1; const created: ShellWindow = { id: serial, appId: id, category, title: base.name, icon: base.icon, x: saved?.x ?? 70 + (windows.length % 6) * 28, y: saved?.y ?? 50 + (windows.length % 5) * 24, width: saved?.w ?? base.defaultWidth, height: saved?.h ?? base.defaultHeight, minimized: false, maximized: false, zIndex: z }; setNextZ(z); setWindows((current) => [...current, created]); setActiveId(serial); }, [focusWindow, nextZ, registry.HKCU.Desktop.windowPositions, windows]);
   const updateWindow = (id: string, patch: Partial<ShellWindow>) => setWindows((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
-  const rememberWindowPosition = (id: string, x: number, y: number, width: number, height: number) => {
-    const item = windows.find((entry) => entry.id === id);
-    if (!item) return;
-    setRegistry((current) => ({ ...current, HKCU: { ...current.HKCU, Desktop: { ...current.HKCU.Desktop, windowPositions: { ...current.HKCU.Desktop.windowPositions, [item.appId]: { x, y, w: width, h: height } } } } }));
-  };
+  const rememberWindowPosition = (id: string, x: number, y: number, width: number, height: number) => { const item = windows.find((entry) => entry.id === id); if (!item) return; setRegistry((current) => ({ ...current, HKCU: { ...current.HKCU, Desktop: { ...current.HKCU.Desktop, windowPositions: { ...current.HKCU.Desktop.windowPositions, [item.appId]: { x, y, w: width, h: height } } } } })); };
   const moveIcon = (id: string, x: number, y: number) => setRegistry((current) => ({ ...current, HKCU: { ...current.HKCU, Desktop: { ...current.HKCU.Desktop, iconPositions: { ...current.HKCU.Desktop.iconPositions, [id]: { x, y } } } } }));
 
-  const renderApp = (windowData: ShellWindow) => {
-    if (windowData.category) return <CategoryView category={windowData.category} onLaunch={launch} />;
-    const definition = appMap.get(windowData.appId);
-    if (!definition) return null;
-    if (definition.kind === "external") return <ExternalApp app={definition} />;
-    switch (windowData.appId) {
-      case "explorer": return <FileExplorer onLaunch={launch} />;
-      case "notepad": return <VirtualNotepad />;
-      case "calculator": return <Calculator />;
-      case "paint": return <Paint />;
-      case "minesweeper": return <Minesweeper />;
-      case "terminal": return <Terminal onLaunch={launch} />;
-      case "run": return <RunDialog apps={apps} onLaunch={launch} />;
-      case "settings": return <Settings settings={settings} onChange={updateSettings} />;
-      default: return <div className="app-fill"><h3>{definition.name}</h3><p>Aplikace je připravena.</p></div>;
-    }
-  };
+  const virtualFs = useMemo(() => { void filesystemVersion; return readVirtualFs(); }, [filesystemVersion]);
+  const desktopFolder = virtualFs ? findVirtualNode(virtualFs, "desktop") : null;
+  const recycleFolder = virtualFs ? findVirtualNode(virtualFs, "recycle") : null;
+  const desktopItems = (desktopFolder?.children ?? []).filter((item) => item.id && !item.deleted) as Required<Pick<FsNode, "id">> & FsNode[];
+  const recycleCount = recycleFolder?.children?.length ?? 0;
+  const desktopEntries = useMemo(() => [...desktopDefaults, { id: "recycle", label: recycleCount ? `Koš (${recycleCount})` : "Koš", icon: recycleCount ? "🗑️" : "🗑", fsId: "recycle", fsType: "folder" as const }, ...desktopItems.map((item) => ({ id: `fs:${item.id}`, label: item.name, icon: item.type === "folder" ? "📁" : "📄", fsId: item.id, fsType: item.type }))], [recycleCount, desktopItems.length]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey && event.key.toLowerCase() === "d") { event.preventDefault(); setWindows((items) => items.map((item) => ({ ...item, minimized: true }))); setActiveId(null); }
-      if (event.metaKey && event.key.toLowerCase() === "e") { event.preventDefault(); launch("explorer"); }
-      if (event.altKey && event.key === "F4" && activeId) { event.preventDefault(); closeWindow(activeId); }
-      if (event.altKey && event.key === "Tab") { event.preventDefault(); const ordered = [...windows].sort((a, b) => b.zIndex - a.zIndex).filter((item) => !item.minimized); const index = ordered.findIndex((item) => item.id === activeId); const next = ordered[(index + 1) % Math.max(1, ordered.length)]; if (next) focusWindow(next.id); }
-      if (event.key === "Escape") { setStartOpen(false); setAllProgramsOpen(false); setDesktopMenu(null); }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeId, closeWindow, focusWindow, launch, windows]);
+  const createDesktopItem = (kind: "folder" | "file") => { const fs = readVirtualFs(); const parent = fs ? findVirtualNode(fs, "desktop") : null; if (!fs || !parent || parent.type !== "folder") return; const existingNames = new Set((parent.children ?? []).map((item) => item.name.toLowerCase())); const base = kind === "folder" ? "Nová složka" : "Nový dokument.txt"; let name = base; let index = 2; while (existingNames.has(name.toLowerCase())) { const dot = base.lastIndexOf("."); name = dot > 0 ? `${base.slice(0, dot)} (${index})${base.slice(dot)}` : `${base} (${index})`; index += 1; } const node: FsNode = { id: crypto.randomUUID(), name, type: kind, ...(kind === "folder" ? { children: [] } : { ext: ".txt", size: "0 B", content: "" }) }; writeVirtualFs(updateVirtualTree(fs, "desktop", (current) => ({ ...current, children: [...(current.children ?? []), node] }))); setSelectedDesktopId(`fs:${node.id}`); notifyDesktop("Plocha", `Vytvořeno: ${name}.`, "success"); setDesktopMenu(null); };
+  const openRecycle = () => { localStorage.setItem("luxfery26:explorer-path", "recycle"); launch("explorer", true); window.setTimeout(() => window.dispatchEvent(new CustomEvent("luxfery:explorer-open-path", { detail: { id: "recycle" } })), 0); };
+  const openDesktopFsItem = (entry: DesktopEntry) => { const fs = readVirtualFs(); const node = entry.fsId && fs ? findVirtualNode(fs, entry.fsId) : null; if (!node) return; if (node.type === "folder") { localStorage.setItem("luxfery26:explorer-path", node.id!); launch("explorer", true); window.setTimeout(() => window.dispatchEvent(new CustomEvent("luxfery:explorer-open-path", { detail: { id: node.id } })), 0); } else if (node.ext === ".txt") { localStorage.setItem("luxfery26:open-file", JSON.stringify({ id: node.id, name: node.name, path: desktopPath(fs!, node.id!) })); launch("notepad", true); } else { launch("explorer", true); } };
+  const arrangeIcons = () => { const all = desktopEntries; const nextPositions: Record<string, { x: number; y: number }> = {}; all.forEach((entry, index) => { nextPositions[entry.id] = { x: 16 + (index % 2) * 92, y: 16 + Math.floor(index / 2) * 86 }; }); setRegistry((current) => ({ ...current, HKCU: { ...current.HKCU, Desktop: { ...current.HKCU.Desktop, iconPositions: nextPositions } } })); notifyDesktop("Plocha", "Ikony byly uspořádány.", "info"); setDesktopMenu(null); };
+  const refreshDesktop = () => { setFilesystemVersion((value) => value + 1); notifyDesktop("Plocha", "Plocha byla obnovena.", "info"); setDesktopMenu(null); };
+
+  const renderApp = (windowData: ShellWindow) => { if (windowData.category) return <CategoryView category={windowData.category} onLaunch={launch} />; const definition = appMap.get(windowData.appId); if (!definition) return null; if (definition.kind === "external") return <ExternalApp app={definition} />; switch (windowData.appId) { case "explorer": return <FileExplorer onLaunch={launch} />; case "notepad": return <VirtualNotepad />; case "calculator": return <Calculator />; case "paint": return <Paint />; case "minesweeper": return <Minesweeper />; case "terminal": return <Terminal onLaunch={launch} />; case "run": return <RunDialog apps={apps} onLaunch={launch} />; case "settings": return <Settings settings={settings} onChange={updateSettings} />; default: return <div className="app-fill"><h3>{definition.name}</h3><p>Aplikace je připravena.</p></div>; } };
+
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d" && !event.ctrlKey) { event.preventDefault(); setWindows((items) => items.map((item) => ({ ...item, minimized: true }))); setActiveId(null); } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") { event.preventDefault(); launch("explorer"); } if (event.key === "F5") { event.preventDefault(); refreshDesktop(); } if (event.altKey && event.key === "F4" && activeId) { event.preventDefault(); closeWindow(activeId); } if (event.altKey && event.key === "Tab") { event.preventDefault(); const ordered = [...windows].sort((a, b) => b.zIndex - a.zIndex).filter((item) => !item.minimized); const index = ordered.findIndex((item) => item.id === activeId); const next = ordered[(index + 1) % Math.max(1, ordered.length)]; if (next) focusWindow(next.id); } if (event.key === "Escape") { setStartOpen(false); setAllProgramsOpen(false); setDesktopMenu(null); setSelectedDesktopId(null); } }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [activeId, closeWindow, focusWindow, launch, windows, refreshDesktop]);
 
   const categorized = useMemo(() => categories.map((category) => ({ category, apps: apps.filter((app) => app.category === category) })), []);
   if (booting) return <BootScreen onDone={() => setBooting(false)} />;
-
-  return <div className={`desktop shell-theme-${settings.theme}`} onContextMenu={(event) => { event.preventDefault(); setStartOpen(false); setDesktopMenu({ x: event.clientX, y: event.clientY }); }} onClick={() => setDesktopMenu(null)}>
+  return <div className={`desktop shell-theme-${settings.theme}`} onContextMenu={(event) => { event.preventDefault(); setStartOpen(false); setSelectedDesktopId(null); setDesktopMenu({ x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 260) }); }} onClick={() => { setDesktopMenu(null); setSelectedDesktopId(null); setAllProgramsOpen(false); }}>
     <div className="wallpaper" aria-label="LUXFERY desktop" />
     <div className="desktop-icons" onClick={(event) => event.stopPropagation()}>
-      {desktopDefaults.map((entry, index) => { const position = registry.HKCU.Desktop.iconPositions[entry.id] ?? { x: 16 + (index % 2) * 92, y: 16 + Math.floor(index / 2) * 86 }; return <DesktopIcon key={entry.id} entry={entry} position={position} onMove={moveIcon} onOpen={() => entry.appId ? launch(entry.appId) : entry.category ? launch(`category:${entry.category}`, true) : undefined} />; })}
+      {desktopEntries.map((entry, index) => { const position = registry.HKCU.Desktop.iconPositions[entry.id] ?? { x: 16 + (index % 2) * 92, y: 16 + Math.floor(index / 2) * 86 }; const openEntry = () => { if (entry.id === "recycle") openRecycle(); else if (entry.appId) launch(entry.appId); else if (entry.category) launch(`category:${entry.category}`, true); else openDesktopFsItem(entry); }; return <DesktopIcon key={entry.id} entry={entry} position={position} selected={selectedDesktopId === entry.id} onSelect={(additive) => setSelectedDesktopId(additive ? selectedDesktopId === entry.id ? null : entry.id : entry.id)} onMove={moveIcon} onOpen={openEntry} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedDesktopId(entry.id); setDesktopMenu({ x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 260), targetId: entry.id }); }} />; })}
     </div>
     {windows.map((windowData) => <WindowFrame key={windowData.id} windowData={windowData} active={windowData.id === activeId} taskbarHeight={settings.taskbarPosition === "bottom" ? 30 : 0} onFocus={() => focusWindow(windowData.id)} onMove={(x, y) => { updateWindow(windowData.id, { x, y }); rememberWindowPosition(windowData.id, x, y, windowData.width, windowData.height); }} onResize={(width, height) => { updateWindow(windowData.id, { width, height }); rememberWindowPosition(windowData.id, windowData.x, windowData.y, width, height); }} onMinimize={() => { updateWindow(windowData.id, { minimized: true }); if (activeId === windowData.id) setActiveId(null); }} onMaximize={() => updateWindow(windowData.id, { maximized: !windowData.maximized, minimized: false })} onClose={() => closeWindow(windowData.id)}>{renderApp(windowData)}</WindowFrame>)}
-
-    {startOpen && <div className="start-menu" onClick={(event) => event.stopPropagation()}>
-      <div className="start-brand">LUXFERY <b>26</b></div>
-      <div className="start-items">
-        <button onClick={() => setAllProgramsOpen((value) => !value)}>Programs <span>▶</span></button>
-        <button onClick={() => launch("explorer")}>Explorer <span>▣</span></button>
-        <button onClick={() => launch("notepad")}>Notepad <span>📝</span></button>
-        <button onClick={() => launch("terminal")}>Terminal <span>⌨</span></button>
-        <button onClick={() => launch("settings")}>Settings <span>⚙</span></button>
-        <button onClick={() => launch("run")}>Run… <span>▶</span></button>
-      </div>
-      {allProgramsOpen && <div className="programs-panel">{categorized.map((group) => <div key={group.category}><strong>{group.category}</strong>{group.apps.map((app) => <button key={app.id} onClick={() => launch(app.id)}>{app.icon} {app.name}</button>)}</div>)}</div>}
-    </div>}
-
-    {desktopMenu && <div className="desktop-context-menu" style={{ left: desktopMenu.x, top: desktopMenu.y }} onClick={(event) => event.stopPropagation()}><button onClick={() => { setDesktopMenu(null); launch("explorer"); }}>Otevřít</button><button onClick={() => window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-refresh`, title: "Plocha", message: "Plocha byla obnovena.", tone: "info" } } ))}>Obnovit</button><button onClick={() => setStartOpen(true)}>Start menu</button></div>}
-
+    {startOpen && <div className="start-menu" onClick={(event) => event.stopPropagation()}><div className="start-brand">LUXFERY <b>26</b></div><div className="start-items"><button onClick={() => setAllProgramsOpen((value) => !value)}>Programs <span>▶</span></button><button onClick={() => launch("explorer")}>Explorer <span>▣</span></button><button onClick={() => launch("notepad")}>Notepad <span>📝</span></button><button onClick={() => launch("terminal")}>Terminal <span>⌨</span></button><button onClick={() => launch("settings")}>Settings <span>⚙</span></button><button onClick={() => launch("run")}>Run… <span>▶</span></button></div>{allProgramsOpen && <div className="programs-panel">{categorized.map((group) => <div key={group.category}><strong>{group.category}</strong>{group.apps.map((app) => <button key={app.id} onClick={() => launch(app.id)}>{app.icon} {app.name}</button>)}</div>)}</div>}</div>}
+    {desktopMenu && <div className="desktop-context-menu" style={{ left: desktopMenu.x, top: desktopMenu.y }} onClick={(event) => event.stopPropagation()}>{desktopMenu.targetId ? <><button onClick={() => { setDesktopMenu(null); if (desktopMenu.targetId === "recycle") openRecycle(); else { const entry = desktopEntries.find((item) => item.id === desktopMenu.targetId); if (entry) entry.appId ? launch(entry.appId) : entry.category ? launch(`category:${entry.category}`, true) : openDesktopFsItem(entry); } }}>Otevřít</button><button onClick={() => { setDesktopMenu(null); launch("settings"); }}>Vlastnosti</button>{desktopMenu.targetId === "recycle" && <button onClick={() => { const fs = readVirtualFs(); if (fs) { writeVirtualFs(updateVirtualTree(fs, "recycle", (node) => ({ ...node, children: [] }))); notifyDesktop("Koš", "Koš byl vysypán.", "success"); } setDesktopMenu(null); }}>Vysypat Koš</button>}</> : <><button onClick={refreshDesktop}>Obnovit</button><button onClick={() => createDesktopItem("folder")}>Nová složka</button><button onClick={() => createDesktopItem("file")}>Nový textový dokument</button><button onClick={arrangeIcons}>Uspořádat podle názvu</button><button onClick={() => { setDesktopMenu(null); launch("explorer"); }}>Otevřít Explorer</button><button onClick={() => { setDesktopMenu(null); launch("settings"); }}>Vlastnosti</button></>}</div>}
     <div className={`taskbar taskbar-${settings.taskbarPosition}`}><button className="start-button" onClick={(event) => { event.stopPropagation(); setStartOpen((value) => !value); }}>⊞ Start</button><div className="task-buttons">{windows.map((item) => <button key={item.id} className={item.id === activeId ? "task-active" : ""} onClick={() => focusWindow(item.id)}>{item.icon} {item.title}</button>)}</div><div className="tray">🔊 {clock.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div></div>
   </div>;
 }
 
-function DesktopIcon({ entry, position, onMove, onOpen }: { entry: DesktopEntry; position: { x: number; y: number }; onMove: (id: string, x: number, y: number) => void; onOpen: () => void }) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const start = useRef({ x: 0, y: 0, px: 0, py: 0 });
-  return <button ref={ref} className="desktop-icon" style={{ left: position.x, top: position.y }} onDoubleClick={onOpen} onPointerDown={(event) => { if (event.button !== 0) return; start.current = { x: position.x, y: position.y, px: event.clientX, py: event.clientY }; setDragging(true); ref.current?.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!dragging) return; onMove(entry.id, Math.max(4, start.current.x + event.clientX - start.current.px), Math.max(4, start.current.y + event.clientY - start.current.py)); }} onPointerUp={(event) => { setDragging(false); ref.current?.releasePointerCapture(event.pointerId); }}><span>{entry.icon}</span><b>{entry.label}</b></button>;
+function DesktopIcon({ entry, position, selected, onSelect, onMove, onOpen, onContextMenu }: { entry: DesktopEntry; position: { x: number; y: number }; selected: boolean; onSelect: (additive: boolean) => void; onMove: (id: string, x: number, y: number) => void; onOpen: () => void; onContextMenu: (event: ReactPointerEvent<HTMLButtonElement>) => void }) {
+  const ref = useRef<HTMLButtonElement>(null); const [dragging, setDragging] = useState(false); const start = useRef({ x: 0, y: 0, px: 0, py: 0 });
+  return <button ref={ref} className={`desktop-icon ${selected ? "desktop-icon-selected" : ""}`} style={{ left: position.x, top: position.y }} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey); }} onDoubleClick={(event) => { event.stopPropagation(); onOpen(); }} onContextMenu={onContextMenu} onPointerDown={(event) => { if (event.button !== 0) return; start.current = { x: position.x, y: position.y, px: event.clientX, py: event.clientY }; setDragging(true); ref.current?.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!dragging) return; onMove(entry.id, Math.max(4, start.current.x + event.clientX - start.current.px), Math.max(4, start.current.y + event.clientY - start.current.py)); }} onPointerUp={(event) => { setDragging(false); ref.current?.releasePointerCapture(event.pointerId); }}><span>{entry.icon}</span><b>{entry.label}</b></button>;
 }
 
 export { App };
