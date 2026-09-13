@@ -34,31 +34,25 @@ export function WindowFrame({ windowData: w, active, taskbarHeight, onFocus, onM
   useEffect(() => {
     const move = (event: MouseEvent) => {
       if (dragRef.current && !w.maximized) {
-        onMove(
-          Math.max(0, event.clientX - dragRef.current.offsetX),
-          Math.max(0, event.clientY - dragRef.current.offsetY),
-        );
+        onMove(Math.max(0, event.clientX - dragRef.current.offsetX), Math.max(0, event.clientY - dragRef.current.offsetY));
       }
       if (resizeRef.current && !w.maximized) {
-        onResize(
-          Math.max(280, resizeRef.current.width + event.clientX - resizeRef.current.startX),
-          Math.max(180, resizeRef.current.height + event.clientY - resizeRef.current.startY),
-        );
+        onResize(Math.max(280, resizeRef.current.width + event.clientX - resizeRef.current.startX), Math.max(180, resizeRef.current.height + event.clientY - resizeRef.current.startY));
       }
     };
-    const up = () => {
-      dragRef.current = null;
-      resizeRef.current = null;
-    };
+    const up = () => { dragRef.current = null; resizeRef.current = null; };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   }, [onMove, onResize, w.maximized]);
 
   if (w.minimized) return null;
+
+  const requestClose = () => {
+    const detail: { windowId: string; cancel: boolean } = { windowId: w.id, cancel: false };
+    window.dispatchEvent(new CustomEvent("luxfery:request-close", { detail }));
+    if (!detail.cancel) onClose();
+  };
 
   const style: CSSProperties = w.maximized
     ? { left: 0, top: 0, right: 0, bottom: taskbarHeight, width: "auto", height: "auto", zIndex: w.zIndex }
@@ -66,33 +60,17 @@ export function WindowFrame({ windowData: w, active, taskbarHeight, onFocus, onM
 
   return (
     <section className={`window ${active ? "active" : ""}`} style={style} onMouseDown={onFocus}>
-      <div
-        className="titlebar"
-        onDoubleClick={onMaximize}
-        onMouseDown={(event) => {
-          if (w.maximized) return;
-          dragRef.current = { offsetX: event.clientX - w.x, offsetY: event.clientY - w.y };
-        }}
-      >
+      <div className="titlebar" onDoubleClick={onMaximize} onMouseDown={(event) => { if (w.maximized) return; dragRef.current = { offsetX: event.clientX - w.x, offsetY: event.clientY - w.y }; }}>
         <b className="sys">{w.icon}</b>
         <strong>{w.title}</strong>
         <div className="controls">
           <button aria-label="Minimalizovat" onClick={(event) => { event.stopPropagation(); onMinimize(); }}>_</button>
           <button aria-label={w.maximized ? "Obnovit" : "Maximalizovat"} onClick={(event) => { event.stopPropagation(); onMaximize(); }}>{w.maximized ? "❐" : "□"}</button>
-          <button aria-label="Zavřít" onClick={(event) => { event.stopPropagation(); onClose(); }}>×</button>
+          <button aria-label="Zavřít" onClick={(event) => { event.stopPropagation(); requestClose(); }}>×</button>
         </div>
       </div>
       <div className="window-body">{children}</div>
-      {!w.maximized && (
-        <div
-          className="window-resize-handle"
-          aria-hidden="true"
-          onMouseDown={(event) => {
-            event.stopPropagation();
-            resizeRef.current = { startX: event.clientX, startY: event.clientY, width: w.width, height: w.height };
-          }}
-        />
-      )}
+      {!w.maximized && <div className="window-resize-handle" aria-hidden="true" onMouseDown={(event) => { event.stopPropagation(); resizeRef.current = { startX: event.clientX, startY: event.clientY, width: w.width, height: w.height }; }} />}
     </section>
   );
 }
