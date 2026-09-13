@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { FILESYSTEM_KEY } from "../core/runtime";
+import { FILESYSTEM_KEY, OPEN_FILE_KEY } from "../core/runtime";
 import { playSystemSound } from "../core/system";
 
-type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[]; deleted?: boolean };
+type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; content?: string; children?: FsNode[]; deleted?: boolean };
 
 type Props = { onLaunch: (id: string) => void; onNotify?: (title: string, message: string, tone?: "info" | "success" | "warning" | "error") => void };
 
@@ -11,7 +11,7 @@ const seed: FsNode = {
   id: "root", name: "C:\\", type: "folder", children: [
     { id: "windows", name: "Windows", type: "folder", children: [{ id: "media", name: "Media", type: "folder", children: [{ id: "startup", name: "startup.wav", type: "file", size: "12 KB", ext: ".wav" }, { id: "chord", name: "chord.wav", type: "file", size: "8 KB", ext: ".wav" }] }] },
     { id: "program-files", name: "Program Files", type: "folder", children: [] },
-    { id: "docs", name: "My Documents", type: "folder", children: [{ id: "welcome", name: "WELCOME.TXT", type: "file", size: "2 KB", ext: ".txt" }, { id: "notes", name: "NOTES.TXT", type: "file", size: "1 KB", ext: ".txt" }] },
+    { id: "docs", name: "My Documents", type: "folder", children: [{ id: "welcome", name: "WELCOME.TXT", type: "file", size: "2 KB", ext: ".txt", content: "Vítejte v LUXFERY 26.\n\nWindows 98, ale běží v roce 2026." }, { id: "notes", name: "NOTES.TXT", type: "file", size: "1 KB", ext: ".txt", content: "Moje poznámky.\n\nUprav mě v Poznámkovém bloku." }] },
     { id: "desktop", name: "Desktop", type: "folder", children: [] },
     { id: "downloads", name: "Downloads", type: "folder", children: [] },
     { id: "temp", name: "Temp", type: "folder", children: [] },
@@ -49,12 +49,12 @@ export function Explorer({ onLaunch, onNotify }: Props) {
     window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-${Math.random()}`, title, message, tone } }));
   };
 
-  const commit = (next: FsNode) => { setFs(next); persist(next); };
-  const open = (node: FsNode) => { if (node.type === "folder") { setCurrentId(node.id); playSystemSound("open", true); return; } if (node.ext?.toLowerCase() === ".txt") onLaunch("notepad"); else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
+  const commit = (next: FsNode) => { setFs(next); persist(next); window.dispatchEvent(new CustomEvent("luxfery:filesystem-changed")); };
+  const open = (node: FsNode) => { if (node.type === "folder") { setCurrentId(node.id); playSystemSound("open", true); return; } if (node.ext?.toLowerCase() === ".txt") { const opened = { id: node.id, name: node.name, path: pathFor(fs, node.id) }; localStorage.setItem(OPEN_FILE_KEY, JSON.stringify(opened)); if (node.id !== selectedId) setSelectedId(node.id); onLaunch("notepad", true); } else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
   const goRoot = () => setCurrentId("root");
   const goParent = () => { if (currentId === "root") return; const parent = findParent(fs, currentId); if (parent) setCurrentId(parent.id); };
   const createFolder = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nová složka"); const next = updateTree(fs, currentId, (node) => ({ ...node, children: [...(node.children ?? []), { id: crypto.randomUUID(), name, type: "folder", children: [] }] })); commit(next); notify("Explorer", `Vytvořena složka „${name}“.`, "success"); };
-  const createText = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nový dokument.txt"); const next = updateTree(fs, currentId, (node) => ({ ...node, children: [...(node.children ?? []), { id: crypto.randomUUID(), name, type: "file", ext: ".txt", size: "0 KB" }] })); commit(next); notify("Explorer", `Vytvořen soubor „${name}“.`, "success"); };
+  const createText = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nový dokument.txt"); const next = updateTree(fs, currentId, (node) => ({ ...node, children: [...(node.children ?? []), { id: crypto.randomUUID(), name, type: "file", ext: ".txt", size: "0 B", content: "" }] })); commit(next); notify("Explorer", `Vytvořen soubor „${name}“.`, "success"); };
   const rename = () => { if (!selected || selected.id === "root") return; const value = window.prompt("Nový název:", selected.name)?.trim(); if (!value) return; const parent = findParent(fs, selected.id); if (!parent) return; const nextName = uniqueName({ ...parent, children: (parent.children ?? []).filter((child) => child.id !== selected.id) }, value); commit(updateTree(fs, selected.id, (node) => ({ ...node, name: nextName }))); notify("Explorer", `Položka přejmenována na „${nextName}“.`, "success"); };
   const remove = () => { if (!selected || selected.id === "root" || selected.deleted) return; const next = updateTree(fs, "recycle", (node) => ({ ...node, children: [...(node.children ?? []), { ...structuredClone(selected), id: `trash-${selected.id}-${Date.now()}`, deleted: true }] })); commit(removeTree(next, selected.id)); notify("Koš", `„${selected.name}“ přesunuto do Koše.`, "info"); setSelectedId(null); };
   const copy = () => { if (selected) { setClipboardId(selected.id); notify("Explorer", `„${selected.name}“ zkopírováno.`, "info"); } };
