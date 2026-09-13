@@ -31,6 +31,12 @@ export function WindowFrame({ windowData: w, active, taskbarHeight, onFocus, onM
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null);
 
+  const requestClose = () => {
+    const detail: { windowId: string; cancel: boolean } = { windowId: w.id, cancel: false };
+    window.dispatchEvent(new CustomEvent("luxfery:request-close", { detail }));
+    if (!detail.cancel) onClose();
+  };
+
   useEffect(() => {
     const move = (event: MouseEvent) => {
       if (dragRef.current && !w.maximized) {
@@ -46,20 +52,26 @@ export function WindowFrame({ windowData: w, active, taskbarHeight, onFocus, onM
     return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   }, [onMove, onResize, w.maximized]);
 
-  if (w.minimized) return null;
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && event.key === "F4") {
+        event.preventDefault();
+        requestClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, w.id]);
 
-  const requestClose = () => {
-    const detail: { windowId: string; cancel: boolean } = { windowId: w.id, cancel: false };
-    window.dispatchEvent(new CustomEvent("luxfery:request-close", { detail }));
-    if (!detail.cancel) onClose();
-  };
+  if (w.minimized) return null;
 
   const style: CSSProperties = w.maximized
     ? { left: 0, top: 0, right: 0, bottom: taskbarHeight, width: "auto", height: "auto", zIndex: w.zIndex }
     : { left: w.x, top: w.y, width: w.width, height: w.height, zIndex: w.zIndex };
 
   return (
-    <section className={`window ${active ? "active" : ""}`} style={style} onMouseDown={onFocus}>
+    <section className={`window ${active ? "active" : ""}`} data-window-id={w.id} style={style} onMouseDown={onFocus}>
       <div className="titlebar" onDoubleClick={onMaximize} onMouseDown={(event) => { if (w.maximized) return; dragRef.current = { offsetX: event.clientX - w.x, offsetY: event.clientY - w.y }; }}>
         <b className="sys">{w.icon}</b>
         <strong>{w.title}</strong>
