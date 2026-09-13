@@ -21,6 +21,7 @@ export const apps: AppDefinition[] = [
   { id: "minesweeper", name: "Hledání min", icon: "💣", category: "System", kind: "internal", description: "Klasická hra.", defaultWidth: 360, defaultHeight: 430 },
   { id: "settings", name: "Ovládací panely", icon: "⚙️", category: "System", kind: "internal", description: "Nastavení desktopu.", defaultWidth: 560, defaultHeight: 480 },
   { id: "terminal", name: "LUXFERY Terminal", icon: "⌨️", category: "System", kind: "internal", description: "Simulovaný příkazový řádek.", defaultWidth: 720, defaultHeight: 460 },
+  { id: "run", name: "Spustit", icon: "▶️", category: "System", kind: "internal", description: "Spustí aplikaci podle názvu nebo ID.", defaultWidth: 520, defaultHeight: 240 },
 
   { id: "chatgpt", name: "ChatGPT", icon: "💬", category: "AI", kind: "external", url: "https://chatgpt.com/", description: "Otevře ChatGPT v novém tabu.", defaultWidth: 1000, defaultHeight: 700 },
   { id: "google", name: "Google", icon: "🌐", category: "Internet", kind: "external", url: "https://www.google.com/", description: "Otevře Google.", defaultWidth: 1000, defaultHeight: 700 },
