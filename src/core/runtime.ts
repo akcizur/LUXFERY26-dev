@@ -42,6 +42,7 @@ export const defaultRegistry: Registry = {
 
 const REGISTRY_KEY = "luxfery26:registry";
 const SESSION_KEY = "luxfery26:session";
+export const FILESYSTEM_KEY = "luxfery26:filesystem";
 
 function canUseStorage() { return typeof window !== "undefined" && !!window.localStorage; }
 
