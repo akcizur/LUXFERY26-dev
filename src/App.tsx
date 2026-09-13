@@ -6,6 +6,7 @@ import { appMap, apps, categories, type AppCategory, type AppDefinition } from "
 import { WindowFrame, type ManagedWindow } from "./desktop/WindowManager";
 import { RunDialog } from "./apps/RunDialog";
 import { Explorer as FileExplorer } from "./apps/Explorer";
+import { Notepad as VirtualNotepad } from "./apps/Notepad";
 
 type FsNode = { name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[] };
 type ShellWindow = ManagedWindow & { appId: string; category?: AppCategory };
@@ -197,7 +198,7 @@ function App() {
     if (definition.kind === "external") return <ExternalApp app={definition} />;
     switch (windowData.appId) {
       case "explorer": return <FileExplorer onLaunch={launch} />;
-      case "notepad": return <Notepad />;
+      case "notepad": return <VirtualNotepad />;
       case "calculator": return <Calculator />;
       case "paint": return <Paint />;
       case "minesweeper": return <Minesweeper />;
@@ -234,33 +235,26 @@ function App() {
       <div className="start-brand">LUXFERY <b>26</b></div>
       <div className="start-items">
         <button onClick={() => setAllProgramsOpen((value) => !value)}>Programs <span>▶</span></button>
-        <button onClick={() => launch("explorer")}>Documents <span>▶</span></button>
-        <button onClick={() => launch("settings")}>Settings</button>
-        <button onClick={() => launch("run")}>Run...</button>
-        <button onClick={() => setWindows((items) => items.map((item) => ({ ...item, minimized: true })))}>Show Desktop</button>
+        <button onClick={() => launch("explorer")}>Explorer <span>▣</span></button>
+        <button onClick={() => launch("notepad")}>Notepad <span>📝</span></button>
+        <button onClick={() => launch("terminal")}>Terminal <span>⌨</span></button>
+        <button onClick={() => launch("settings")}>Settings <span>⚙</span></button>
+        <button onClick={() => launch("run")}>Run… <span>▶</span></button>
       </div>
-      {allProgramsOpen && <div className="programs-panel">{categorized.map(({ category, apps: categoryApps }) => <div key={category}><strong>{category}</strong>{categoryApps.map((app) => <button key={app.id} onClick={() => launch(app.id)}>{app.icon} {app.name}</button>)}</div>)}</div>}
+      {allProgramsOpen && <div className="programs-panel">{categorized.map((group) => <div key={group.category}><strong>{group.category}</strong>{group.apps.map((app) => <button key={app.id} onClick={() => launch(app.id)}>{app.icon} {app.name}</button>)}</div>)}</div>}
     </div>}
 
-    {desktopMenu && <div className="desktop-context-menu" style={{ left: Math.min(desktopMenu.x, Math.max(0, window.innerWidth - 190)), top: Math.min(desktopMenu.y, Math.max(0, window.innerHeight - 140)) }} onClick={(event) => event.stopPropagation()}>
-      <button onClick={() => window.location.reload()}>Obnovit</button>
-      <button onClick={() => launch("explorer")}>Nové okno Exploreru</button>
-      <button onClick={() => launch("run")}>Spustit...</button>
-      <button onClick={() => launch("settings")}>Vlastnosti plochy</button>
-    </div>}
+    {desktopMenu && <div className="desktop-context-menu" style={{ left: desktopMenu.x, top: desktopMenu.y }} onClick={(event) => event.stopPropagation()}><button onClick={() => { setDesktopMenu(null); launch("explorer"); }}>Otevřít</button><button onClick={() => window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-refresh`, title: "Plocha", message: "Plocha byla obnovena.", tone: "info" } } ))}>Obnovit</button><button onClick={() => setStartOpen(true)}>Start menu</button></div>}
 
-    <div className={`taskbar ${settings.taskbarPosition === "top" ? "taskbar-top" : ""}`}>
-      <button className={`start-button ${startOpen ? "pressed" : ""}`} aria-haspopup="menu" aria-expanded={startOpen} onClick={(event) => { event.stopPropagation(); setStartOpen((value) => !value); }}>🪟 <b>Start</b></button>
-      <div className="task-buttons" aria-label="Spuštěné aplikace">{windows.map((windowData) => <button key={windowData.id} className={windowData.id === activeId && !windowData.minimized ? "task-active" : ""} aria-pressed={windowData.id === activeId && !windowData.minimized} onClick={() => windowData.id === activeId && !windowData.minimized ? updateWindow(windowData.id, { minimized: true }) : focusWindow(windowData.id)}>{windowData.icon} {windowData.title}</button>)}</div>
-      <div className="tray"><span>🖥</span><span>{clock.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span></div>
-    </div>
+    <div className={`taskbar taskbar-${settings.taskbarPosition}`}><button className="start-button" onClick={(event) => { event.stopPropagation(); setStartOpen((value) => !value); }}>⊞ Start</button><div className="task-buttons">{windows.map((item) => <button key={item.id} className={item.id === activeId ? "task-active" : ""} onClick={() => focusWindow(item.id)}>{item.icon} {item.title}</button>)}</div><div className="tray">🔊 {clock.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div></div>
   </div>;
 }
 
 function DesktopIcon({ entry, position, onMove, onOpen }: { entry: DesktopEntry; position: { x: number; y: number }; onMove: (id: string, x: number, y: number) => void; onOpen: () => void }) {
-  const drag = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
-  useEffect(() => { const move = (event: MouseEvent) => { if (!drag.current) return; const element = document.getElementById(`desktop-icon-${entry.id}`); if (element) { element.style.left = `${Math.max(0, drag.current.x + event.clientX - drag.current.startX)}px`; element.style.top = `${Math.max(0, drag.current.y + event.clientY - drag.current.startY)}px`; } }; const up = () => { if (drag.current) { const element = document.getElementById(`desktop-icon-${entry.id}`); if (element) onMove(entry.id, element.offsetLeft, element.offsetTop); } drag.current = null; }; window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }; }, [entry.id, onMove]);
-  return <button id={`desktop-icon-${entry.id}`} className="desktop-icon" style={{ left: position.x, top: position.y } as CSSProperties} aria-label={entry.label} onDoubleClick={onOpen} onKeyDown={(event) => event.key === "Enter" && onOpen()} onMouseDown={(event) => { drag.current = { x: position.x, y: position.y, startX: event.clientX, startY: event.clientY }; }}><span>{entry.icon}</span><b>{entry.label}</b></button>;
+  const ref = useRef<HTMLButtonElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const start = useRef({ x: 0, y: 0, px: 0, py: 0 });
+  return <button ref={ref} className="desktop-icon" style={{ left: position.x, top: position.y }} onDoubleClick={onOpen} onPointerDown={(event) => { if (event.button !== 0) return; start.current = { x: position.x, y: position.y, px: event.clientX, py: event.clientY }; setDragging(true); ref.current?.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!dragging) return; onMove(entry.id, Math.max(4, start.current.x + event.clientX - start.current.px), Math.max(4, start.current.y + event.clientY - start.current.py)); }} onPointerUp={(event) => { setDragging(false); ref.current?.releasePointerCapture(event.pointerId); }}><span>{entry.icon}</span><b>{entry.label}</b></button>;
 }
 
 export { App };
