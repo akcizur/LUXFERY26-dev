@@ -69,6 +69,12 @@ export function DesktopDragController() {
 
   useEffect(() => { const refresh = () => setFilesystemVersion((value) => value + 1); const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape" && folderViewId) { event.preventDefault(); const fs = loadFs(); const parent = fs ? findParent(fs, folderViewId) : null; if (!parent || parent.id === "desktop") setFolderViewId(null); else if (parent.id) setFolderViewId(parent.id); } }; window.addEventListener("luxfery:filesystem-changed", refresh); window.addEventListener("keydown", onKeyDown); return () => { window.removeEventListener("luxfery:filesystem-changed", refresh); window.removeEventListener("keydown", onKeyDown); }; }, [folderViewId]);
   useEffect(() => { if (!folderViewId) return; const fs = loadFs(); if (!fs || !findNode(fs, folderViewId)) setFolderViewId(null); }, [filesystemVersion, folderViewId]);
+  useEffect(() => {
+    const desktop = document.querySelector<HTMLElement>(".desktop");
+    if (!desktop) return;
+    desktop.classList.toggle("desktop-folder-mode", Boolean(folderViewId));
+    return () => desktop.classList.remove("desktop-folder-mode");
+  }, [folderViewId]);
   useEffect(() => { document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.toggle("desktop-icon-drop-target", icon === dropTargetRef.current)); });
 
   const fs = loadFs();
