@@ -105,6 +105,7 @@ export function Notepad({ windowId }: Props) {
   };
 
   const newDocument = () => {
+    if (dirty && !window.confirm("Dokument obsahuje neuložené změny. Zahodit je?")) return;
     localStorage.removeItem(OPEN_FILE_KEY);
     setOpenFile(null);
     setText("");
@@ -122,6 +123,16 @@ export function Notepad({ windowId }: Props) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
+
+  useEffect(() => {
+    const onRequestClose = (event: Event) => {
+      const custom = event as CustomEvent<{ windowId?: string; cancel?: boolean }>;
+      if (custom.detail?.windowId !== windowId || !dirty) return;
+      if (!window.confirm(`„${openFile?.name ?? "Bez názvu"}" obsahuje neuložené změny. Zavřít bez uložení?`)) custom.detail.cancel = true;
+    };
+    window.addEventListener("luxfery:request-close", onRequestClose);
+    return () => window.removeEventListener("luxfery:request-close", onRequestClose);
+  }, [dirty, openFile, windowId]);
 
   return <div className="app-fill">
     <div className="menu"><button className="menu-trigger" onClick={saveCurrent}>Soubor</button><button className="menu-trigger">Úpravy</button><button className="menu-trigger">Hledat</button><button className="menu-trigger">Formát</button><button className="menu-trigger">Nápověda</button></div>
