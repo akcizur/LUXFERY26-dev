@@ -43,6 +43,7 @@ function readOpenFile(): OpenFile {
 
 export function Notepad() {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [windowId, setWindowId] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<OpenFile>(() => readOpenFile());
   const [text, setText] = useState("");
   const [wrap, setWrap] = useState(true);
@@ -50,7 +51,11 @@ export function Notepad() {
   const [status, setStatus] = useState("");
   const title = useMemo(() => `${openFile?.name ?? "Bez názvu"}${dirty ? " *" : ""}`, [openFile, dirty]);
 
-  const windowId = rootRef.current?.closest<HTMLElement>("[data-window-id]")?.dataset.windowId;
+  useEffect(() => {
+    const id = rootRef.current?.closest<HTMLElement>("[data-window-id]")?.dataset.windowId ?? null;
+    setWindowId(id);
+  }, []);
+
   const emitDirty = (value: boolean) => {
     if (!windowId) return;
     window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId, dirty: value } }));
@@ -63,9 +68,8 @@ export function Notepad() {
     const node = file && fs ? findNode(fs, file.id) : null;
     setText(node?.content ?? "");
     setDirty(false);
-    const id = windowId;
-    if (id) window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId: id, dirty: false } }));
-    return () => { if (id) window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId: id, dirty: false } })); };
+    emitDirty(false);
+    return () => emitDirty(false);
   }, [windowId]);
 
   const markDirty = (value: boolean) => { setDirty(value); emitDirty(value); };
