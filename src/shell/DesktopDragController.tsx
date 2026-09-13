@@ -12,6 +12,7 @@ function updateTree(root: FsNode, id: string, updater: (node: FsNode) => FsNode)
 function removeTree(root: FsNode, id: string): FsNode { return { ...root, children: root.children?.filter((child) => child.id !== id).map((child) => removeTree(child, id)) }; }
 function nodeForDesktopLabel(root: FsNode, label: string): FsNode | null { const desktop = findNode(root, "desktop"); return (desktop?.children ?? []).find((item) => item.name === label && !item.deleted) ?? null; }
 function iconIdForButton(button: HTMLElement): string | null { const label = button.innerText.trim().replace(/\s+/g, " "); if (label.startsWith("Koš")) return "recycle"; if (STATIC_IDS[label]) return STATIC_IDS[label]; const fs = loadFs(); const node = fs ? nodeForDesktopLabel(fs, label) : null; return node?.id ? `fs:${node.id}` : null; }
+function closeOpenWindows() { document.querySelectorAll<HTMLElement>(".window").forEach((win) => { win.querySelector<HTMLElement>(".controls button:last-child")?.click(); }); }
 
 function trashItem(sourceId: string) {
   if (!sourceId.startsWith("fs:")) return false;
@@ -62,19 +63,14 @@ export function DesktopDragController() {
     const onPointerDown = (event: PointerEvent) => { if (event.button !== 0) return; const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".desktop-icon") : null; if (target) dragRef.current = target; };
     const onPointerMove = (event: PointerEvent) => { const source = dragRef.current; if (!source || folderViewId) return; const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>(".desktop-icon") ?? null; const nextTarget = target?.innerText.trim().startsWith("Koš") ? target : null; if (dropTargetRef.current !== nextTarget) { dropTargetRef.current = nextTarget; forceRender((value) => value + 1); } };
     const onPointerUp = () => { const source = dragRef.current; if (!source || folderViewId) return; dragRef.current = null; const dropTarget = dropTargetRef.current; dropTargetRef.current = null; forceRender((value) => value + 1); if (dropTarget) trashItem(iconIdForButton(source) ?? ""); };
-    const onDoubleClick = (event: MouseEvent) => { const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".desktop-icon") : null; if (!target) return; const sourceId = iconIdForButton(target); if (!sourceId?.startsWith("fs:")) return; const fs = loadFs(); const node = fs ? findNode(fs, sourceId.slice(3)) : null; if (!node || node.type !== "folder" || node.deleted || !node.id) return; event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation(); setFolderViewId(node.id); };
+    const onDoubleClick = (event: MouseEvent) => { const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".desktop-icon") : null; if (!target) return; const sourceId = iconIdForButton(target); if (!sourceId?.startsWith("fs:")) return; const fs = loadFs(); const node = fs ? findNode(fs, sourceId.slice(3)) : null; if (!node || node.type !== "folder" || node.deleted || !node.id) return; event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation(); closeOpenWindows(); setFolderViewId(node.id); };
     window.addEventListener("pointerdown", onPointerDown, true); window.addEventListener("pointermove", onPointerMove, true); window.addEventListener("pointerup", onPointerUp, true); window.addEventListener("dblclick", onDoubleClick, true);
     return () => { window.removeEventListener("pointerdown", onPointerDown, true); window.removeEventListener("pointermove", onPointerMove, true); window.removeEventListener("pointerup", onPointerUp, true); window.removeEventListener("dblclick", onDoubleClick, true); };
   }, [folderViewId]);
 
   useEffect(() => { const refresh = () => setFilesystemVersion((value) => value + 1); const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape" && folderViewId) { event.preventDefault(); const fs = loadFs(); const parent = fs ? findParent(fs, folderViewId) : null; if (!parent || parent.id === "desktop") setFolderViewId(null); else if (parent.id) setFolderViewId(parent.id); } }; window.addEventListener("luxfery:filesystem-changed", refresh); window.addEventListener("keydown", onKeyDown); return () => { window.removeEventListener("luxfery:filesystem-changed", refresh); window.removeEventListener("keydown", onKeyDown); }; }, [folderViewId]);
   useEffect(() => { if (!folderViewId) return; const fs = loadFs(); if (!fs || !findNode(fs, folderViewId)) setFolderViewId(null); }, [filesystemVersion, folderViewId]);
-  useEffect(() => {
-    const desktop = document.querySelector<HTMLElement>(".desktop");
-    if (!desktop) return;
-    desktop.classList.toggle("desktop-folder-mode", Boolean(folderViewId));
-    return () => desktop.classList.remove("desktop-folder-mode");
-  }, [folderViewId]);
+  useEffect(() => { const desktop = document.querySelector<HTMLElement>(".desktop"); if (!desktop) return; desktop.classList.toggle("desktop-folder-mode", Boolean(folderViewId)); return () => desktop.classList.remove("desktop-folder-mode"); }, [folderViewId]);
   useEffect(() => { document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.toggle("desktop-icon-drop-target", icon === dropTargetRef.current)); });
 
   const fs = loadFs();
