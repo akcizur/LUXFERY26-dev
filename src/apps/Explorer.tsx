@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { FILESYSTEM_KEY } from "../core/runtime";
+import { playSystemSound } from "../core/system";
 
 type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; children?: FsNode[]; deleted?: boolean };
 
@@ -41,10 +42,15 @@ export function Explorer({ onLaunch, onNotify }: Props) {
   const current = findNode(fs, currentId) ?? fs;
   const items = useMemo(() => (current.children ?? []).filter((item) => !item.deleted && item.name.toLowerCase().includes(query.toLowerCase())), [current, query]);
   const selected = selectedId ? findNode(fs, selectedId) : null;
-  const notify = (title: string, message: string, tone: "info" | "success" | "warning" | "error" = "info") => onNotify?.(title, message, tone);
+  const notify = (title: string, message: string, tone: "info" | "success" | "warning" | "error" = "info") => {
+    onNotify?.(title, message, tone);
+    const kind = tone === "error" ? "error" : tone === "success" ? "notify" : tone === "warning" ? "error" : "click";
+    playSystemSound(kind, true);
+    window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-${Math.random()}`, title, message, tone } }));
+  };
 
   const commit = (next: FsNode) => { setFs(next); persist(next); };
-  const open = (node: FsNode) => { if (node.type === "folder") { setCurrentId(node.id); return; } if (node.ext?.toLowerCase() === ".txt") onLaunch("notepad"); else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
+  const open = (node: FsNode) => { if (node.type === "folder") { setCurrentId(node.id); playSystemSound("open", true); return; } if (node.ext?.toLowerCase() === ".txt") onLaunch("notepad"); else notify("Explorer", `${node.name} není přidružena k interní aplikaci.`, "warning"); };
   const goRoot = () => setCurrentId("root");
   const goParent = () => { if (currentId === "root") return; const parent = findParent(fs, currentId); if (parent) setCurrentId(parent.id); };
   const createFolder = () => { const parent = findNode(fs, currentId); if (!parent || parent.type !== "folder") return; const name = uniqueName(parent, "Nová složka"); const next = updateTree(fs, currentId, (node) => ({ ...node, children: [...(node.children ?? []), { id: crypto.randomUUID(), name, type: "folder", children: [] }] })); commit(next); notify("Explorer", `Vytvořena složka „${name}“.`, "success"); };
