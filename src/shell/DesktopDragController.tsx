@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FILESYSTEM_KEY } from "../core/runtime";
 import "./DesktopDragController.css";
 
@@ -41,8 +42,8 @@ function DesktopFolderSurface({ root, currentId, onBack, onOpenFolder }: { root:
   const items = (current.children ?? []).filter((item) => item.id && !item.deleted);
   return <div className="desktop-folder-surface" role="region" aria-label={`Obsah složky ${current.name}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
     <div className="desktop-folder-surface-main">
-      <button className="desktop-folder-icon desktop-folder-back" onClick={(event) => { event.stopPropagation(); onBack(); }} title="Zpět"><span>←</span><b>Zpět</b></button>
-      {items.map((item, index) => <button key={item.id} className="desktop-folder-icon" style={{ left: 16 + ((index + 1) % 2) * 92, top: 16 + Math.floor((index + 1) / 2) * 86 }} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => { event.stopPropagation(); if (item.type === "folder" && item.id) onOpenFolder(item.id); }}><span>{item.type === "folder" ? "📁" : "📄"}</span><b>{item.name}</b></button>)}
+      <button type="button" className="desktop-folder-icon desktop-folder-back" onClick={(event) => { event.stopPropagation(); onBack(); }} title="Zpět"><span>←</span><b>Zpět</b></button>
+      {items.map((item, index) => <button type="button" key={item.id} className="desktop-folder-icon" style={{ left: 16 + ((index + 1) % 2) * 92, top: 16 + Math.floor((index + 1) / 2) * 86 }} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => { event.stopPropagation(); if (item.type === "folder" && item.id) onOpenFolder(item.id); }}>{item.type === "folder" ? <span>📁</span> : <span>📄</span>}<b>{item.name}</b></button>)}
     </div>
     <aside className="desktop-folder-side sunken">
       <div className="desktop-folder-panel-title">Strom souborů</div>
@@ -57,7 +58,16 @@ export function DesktopDragController() {
   const dropTargetRef = useRef<HTMLElement | null>(null);
   const [folderViewId, setFolderViewId] = useState<string | null>(null);
   const [filesystemVersion, setFilesystemVersion] = useState(0);
+  const [desktopHost, setDesktopHost] = useState<HTMLElement | null>(null);
   const [, forceRender] = useState(0);
+
+  useEffect(() => {
+    const locateDesktop = () => setDesktopHost(document.querySelector<HTMLElement>(".desktop"));
+    locateDesktop();
+    const observer = new MutationObserver(locateDesktop);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => { if (event.button !== 0) return; const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".desktop-icon") : null; if (target) dragRef.current = target; };
@@ -74,5 +84,9 @@ export function DesktopDragController() {
   useEffect(() => { document.querySelectorAll<HTMLElement>(".desktop-icon").forEach((icon) => icon.classList.toggle("desktop-icon-drop-target", icon === dropTargetRef.current)); });
 
   const fs = loadFs();
-  return fs && folderViewId ? <DesktopFolderSurface root={fs} currentId={folderViewId} onBack={() => { const parent = findParent(fs, folderViewId); if (!parent || parent.id === "desktop") setFolderViewId(null); else if (parent.id) setFolderViewId(parent.id); }} onOpenFolder={(id) => setFolderViewId(id)} /> : null;
+  if (!desktopHost || !fs || !folderViewId) return null;
+  return createPortal(
+    <DesktopFolderSurface root={fs} currentId={folderViewId} onBack={() => { const parent = findParent(fs, folderViewId); if (!parent || parent.id === "desktop") setFolderViewId(null); else if (parent.id) setFolderViewId(parent.id); }} onOpenFolder={(id) => setFolderViewId(id)} />,
+    desktopHost,
+  );
 }
