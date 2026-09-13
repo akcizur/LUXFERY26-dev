@@ -3,8 +3,8 @@ import { FILESYSTEM_KEY, OPEN_FILE_KEY } from "../core/runtime";
 import type { ReactNode } from "react";
 
 type FsNode = { id: string; name: string; type: "folder" | "file"; size?: string; ext?: string; content?: string; children?: FsNode[]; deleted?: boolean };
-
 type OpenFile = { id: string; name: string; path: string } | null;
+type Props = { windowId?: string };
 
 function Button({ children, onClick, disabled = false }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) {
   return <button className="win-btn" disabled={disabled} onClick={onClick}>{children}</button>;
@@ -42,7 +42,12 @@ function readOpenFile(): OpenFile {
   catch { return null; }
 }
 
-export function Notepad() {
+function emitDirty(windowId: string | undefined, dirty: boolean) {
+  if (!windowId) return;
+  window.dispatchEvent(new CustomEvent("luxfery:notepad-dirty", { detail: { windowId, dirty } }));
+}
+
+export function Notepad({ windowId }: Props) {
   const [openFile, setOpenFile] = useState<OpenFile>(() => readOpenFile());
   const [text, setText] = useState("");
   const [wrap, setWrap] = useState(true);
@@ -57,7 +62,11 @@ export function Notepad() {
     const node = file && fs ? findNode(fs, file.id) : null;
     setText(node?.content ?? "");
     setDirty(false);
-  }, []);
+    emitDirty(windowId, false);
+    return () => emitDirty(windowId, false);
+  }, [windowId]);
+
+  const markDirty = (value: boolean) => { setDirty(value); emitDirty(windowId, value); };
 
   const saveCurrent = () => {
     if (!openFile) return saveAs();
@@ -68,7 +77,7 @@ export function Notepad() {
     const next = updateTree(fs, openFile.id, (current) => ({ ...current, content: text, ext: ".txt", size: `${Math.max(1, new Blob([text]).size)} B` }));
     localStorage.setItem(FILESYSTEM_KEY, JSON.stringify(next));
     localStorage.setItem(OPEN_FILE_KEY, JSON.stringify(openFile));
-    setDirty(false);
+    markDirty(false);
     setStatus(`Uloženo: ${openFile.path}`);
     window.dispatchEvent(new CustomEvent("luxfery:filesystem-changed"));
     window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-notepad`, title: "Poznámkový blok", message: `Soubor „${openFile.name}“ byl uložen.`, tone: "success" } }));
@@ -89,25 +98,36 @@ export function Notepad() {
     const opened = { id, name, path: `C:\\My Documents\\${name}` } satisfies OpenFile;
     localStorage.setItem(OPEN_FILE_KEY, JSON.stringify(opened));
     setOpenFile(opened);
-    setDirty(false);
+    markDirty(false);
     setStatus(`Uloženo jako: ${opened.path}`);
     window.dispatchEvent(new CustomEvent("luxfery:filesystem-changed"));
-    window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-notepad-saveas`, title: "Poznámkový blok", message: `Vytvořen soubor „${name}“.`, tone: "success" } }));
+    window.dispatchEvent(new CustomEvent("luxfery:notice", { detail: { id: `${Date.now()}-notepad-saveas`, title: "Poznámkový blok", message: `Vytvořen soubor „${name}".`, tone: "success" } }));
   };
 
   const newDocument = () => {
     localStorage.removeItem(OPEN_FILE_KEY);
     setOpenFile(null);
     setText("");
-    setDirty(false);
+    markDirty(false);
     setStatus("Nový dokument");
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (event.shiftKey) saveAs(); else saveCurrent();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   return <div className="app-fill">
     <div className="menu"><button className="menu-trigger" onClick={saveCurrent}>Soubor</button><button className="menu-trigger">Úpravy</button><button className="menu-trigger">Hledat</button><button className="menu-trigger">Formát</button><button className="menu-trigger">Nápověda</button></div>
     <div className="toolbar"><Button onClick={newDocument}>Nový</Button><Button onClick={saveCurrent}>Uložit</Button><Button onClick={saveAs}>Uložit jako…</Button><Button onClick={() => navigator.clipboard?.writeText(text)}>Kopírovat</Button><Button onClick={() => setWrap(!wrap)}>Zalamování: {wrap ? "Ano" : "Ne"}</Button></div>
     <div className="notepad-titlebar">{title}</div>
-    <textarea className="editor sunken" autoFocus value={text} onChange={(event) => { setText(event.target.value); setDirty(true); }} style={{ whiteSpace: wrap ? "pre-wrap" : "pre" }} />
+    <textarea className="editor sunken" autoFocus value={text} onChange={(event) => { setText(event.target.value); markDirty(true); }} style={{ whiteSpace: wrap ? "pre-wrap" : "pre" }} />
     <div className="status">Řádky: {text.split("\n").length}<span />Znaky: {text.length}<span />{openFile?.path ?? "Bez názvu"}<span />{status || "Připraveno"}</div>
   </div>;
 }
