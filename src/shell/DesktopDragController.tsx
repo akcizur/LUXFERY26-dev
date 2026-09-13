@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FILESYSTEM_KEY, loadRegistry, saveRegistry } from "../core/runtime";
+import { FILESYSTEM_KEY } from "../core/runtime";
 import "./DesktopDragController.css";
 
 type FsNode = {
@@ -10,8 +10,6 @@ type FsNode = {
   children?: FsNode[];
   deleted?: boolean;
 };
-
-type IconPosition = { x: number; y: number };
 
 const STATIC_IDS: Record<string, string> = {
   "Tento počítač": "my-computer",
@@ -64,33 +62,6 @@ function iconIdForButton(button: HTMLElement): string | null {
   const fs = loadFs();
   const node = fs ? nodeForLabel(fs, label) : null;
   return node?.id ? `fs:${node.id}` : null;
-}
-
-function snap(value: number, grid = 8) {
-  return Math.max(4, Math.round(value / grid) * grid);
-}
-
-function positionOf(button: HTMLElement): IconPosition {
-  const left = Number.parseFloat(button.style.left || "0");
-  const top = Number.parseFloat(button.style.top || "0");
-  return { x: Number.isFinite(left) ? left : 0, y: Number.isFinite(top) ? top : 0 };
-}
-
-function persistPosition(id: string, position: IconPosition) {
-  const registry = loadRegistry();
-  saveRegistry({
-    ...registry,
-    HKCU: {
-      ...registry.HKCU,
-      Desktop: {
-        ...registry.HKCU.Desktop,
-        iconPositions: {
-          ...registry.HKCU.Desktop.iconPositions,
-          [id]: position,
-        },
-      },
-    },
-  });
 }
 
 function trashItem(sourceId: string) {
@@ -149,25 +120,7 @@ export function DesktopDragController() {
       const dropTarget = dropTargetRef.current;
       dropTargetRef.current = null;
       forceRender((value) => value + 1);
-      if (dropTarget) {
-        trashItem(iconIdForButton(source) ?? "");
-        return;
-      }
-      const id = iconIdForButton(source);
-      if (!id) return;
-      const current = positionOf(source);
-      const next = { x: snap(current.x), y: snap(current.y) };
-      source.style.left = `${next.x}px`;
-      source.style.top = `${next.y}px`;
-      persistPosition(id, next);
-      window.dispatchEvent(new CustomEvent("luxfery:notice", {
-        detail: {
-          id: `${Date.now()}-desktop-snap`,
-          title: "Plocha",
-          message: "Ikona byla přichycena k mřížce.",
-          tone: "info",
-        },
-      }));
+      if (dropTarget) trashItem(iconIdForButton(source) ?? "");
     };
 
     window.addEventListener("pointerdown", onPointerDown, true);
