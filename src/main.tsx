@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { ContextMenuLayer } from "./shell/ContextMenuLayer";
 import { NotificationCenter } from "./shell/NotificationCenter";
 import { RetroBackground } from "./RetroBackground";
 import "./styles.css";
@@ -16,5 +17,6 @@ createRoot(root).render(
     <RetroBackground />
     <App />
     <NotificationCenter />
+    <ContextMenuLayer />
   </StrictMode>,
 );
